@@ -29,10 +29,11 @@ pnpm lint
 pnpm build
 ```
 
-## Data
+## AI ranking (9router / OpenAI-compatible)
 
-- `./data/studios/<id>/studio.json` + rendered clips
-- `./data/media/` uploads
-- Evidence from ClipperStudio RE: `~/.hermes/cache/scratch/clipperstudio/FEATURE_MAP.md`
+1. Open `/settings`
+2. Base URL e.g. `http://127.0.0.1:20128/v1`
+3. Paste API key → **Fetch models** → pilih model → enable → Save
+4. Next studio create akan rank clip via AI; gagal → fallback lokal
 
-Clip scoring is a local speech-density heuristic (not their cloud model).
+Settings file: `data/settings.json` (gitignored via `/data`).

@@ -73,12 +73,20 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-4 py-8">
-      <header>
-        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Local only</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Personal Clipper</h1>
-        <p className="mt-1 text-sm text-zinc-400">
-          URL/upload → yt-dlp/ffmpeg → whisper → clips + Skill Packs. Data di folder lokal.
-        </p>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Local only</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Personal Clipper</h1>
+          <p className="mt-1 text-sm text-zinc-400">
+            URL/upload → yt-dlp/ffmpeg → whisper → AI/local clips + Skill Packs.
+          </p>
+        </div>
+        <Link
+          href="/settings"
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-900"
+        >
+          AI Settings
+        </Link>
       </header>
 
       <form

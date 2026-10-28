@@ -432,16 +432,43 @@ export async function processStudio(studioId: string) {
       detectSilences(audioPath),
       detectScenes(current.mediaPath!, current.durationSec || durationSec),
     ]);
-    const candidates = proposeClips(current.transcript || [], current.durationSec || durationSec, {
-      targetSec: Number(process.env.PERSONAL_CLIPPER_TARGET_SEC || 40),
-      maxClips: Number(process.env.PERSONAL_CLIPPER_MAX_CLIPS || 8),
-      silences,
-      scenes,
-    });
+    const targetSec = Number(process.env.PERSONAL_CLIPPER_TARGET_SEC || 40);
+    const maxClips = Number(process.env.PERSONAL_CLIPPER_MAX_CLIPS || 8);
+    let candidates: ClipCandidate[] = [];
+    let clipSource = "local";
+    try {
+      const { loadAiSettings } = await import("./ai-settings");
+      const aiSettings = loadAiSettings();
+      if (aiSettings.enabled && aiSettings.model && (current.transcript || []).length) {
+        bump({ progress: { pct: 68, message: `AI ranking (${aiSettings.model})…` } });
+        const { rankClipsWithAi } = await import("./ai");
+        candidates = await rankClipsWithAi(current.transcript || [], current.durationSec || durationSec, {
+          targetSec,
+          maxClips,
+        });
+        clipSource = "ai";
+      }
+    } catch (e) {
+      bump({
+        progress: {
+          pct: 69,
+          message: `AI gagal, fallback lokal: ${e instanceof Error ? e.message.slice(0, 80) : "error"}`,
+        },
+      });
+    }
+    if (!candidates.length) {
+      candidates = proposeClips(current.transcript || [], current.durationSec || durationSec, {
+        targetSec,
+        maxClips,
+        silences,
+        scenes,
+      });
+      clipSource = "local";
+    }
     current = bump({
       clips: candidates.map((c) => ({ ...c, status: "pending" as const })),
       status: "rendering",
-      progress: { pct: 72, message: `Render ${candidates.length} clip…` },
+      progress: { pct: 72, message: `Render ${candidates.length} clip (${clipSource})…` },
     });
 
     const rendered: RenderedClip[] = [];
