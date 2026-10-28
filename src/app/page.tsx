@@ -1,69 +1,250 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import type { AspectRatio, HookStyle, SkillPacks, SourceKind, Studio } from "@/lib/types";
+import { DEFAULT_SKILLS } from "@/lib/types";
+
+export default function HomePage() {
+  const [studios, setStudios] = useState<Studio[]>([]);
+  const [source, setSource] = useState<SourceKind>("youtube");
+  const [link, setLink] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [exportAspect, setExportAspect] = useState<AspectRatio>("9:16");
+  const [skills, setSkills] = useState<SkillPacks>(DEFAULT_SKILLS);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = useCallback(async () => {
+    const r = await fetch("/api/studios");
+    const j = await r.json();
+    setStudios(j.data?.items ?? []);
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      if (alive) void refresh();
+    };
+    const boot = setTimeout(tick, 0);
+    const t = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearTimeout(boot);
+      clearInterval(t);
+    };
+  }, [refresh]);
+
+  async function onCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      let r: Response;
+      if (source === "upload") {
+        if (!file) throw new Error("Pilih file video");
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("source", "upload");
+        if (title) fd.append("title", title);
+        fd.append("exportAspect", exportAspect);
+        fd.append("skills", JSON.stringify(skills));
+        r = await fetch("/api/studios", { method: "POST", body: fd });
+      } else {
+        r = await fetch("/api/studios", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source, link, title: title || undefined, exportAspect, skills }),
+        });
+      }
+      const j = await r.json();
+      if (!r.ok || !j.status) throw new Error(j.message || "Gagal buat studio");
+      setLink("");
+      setFile(null);
+      setTitle("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-4 py-8">
+      <header>
+        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Local only</p>
+        <h1 className="text-3xl font-semibold tracking-tight">Personal Clipper</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          URL/upload → yt-dlp/ffmpeg → whisper → clips + Skill Packs. Data di folder lokal.
+        </p>
+      </header>
+
+      <form
+        onSubmit={onCreate}
+        className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 shadow-xl shadow-black/30"
+      >
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(["youtube", "tiktok", "upload"] as SourceKind[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSource(s)}
+              className={`rounded-full px-4 py-1.5 text-sm capitalize ${
+                source === s ? "bg-white text-black" : "border border-zinc-700 text-zinc-300"
+              }`}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {source === "upload" ? (
+          <input
+            type="file"
+            accept="video/*"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="mb-3 block w-full text-sm text-zinc-300"
+          />
+        ) : (
+          <input
+            type="url"
+            required
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder={
+              source === "tiktok" ? "https://www.tiktok.com/..." : "https://www.youtube.com/watch?v=..."
+            }
+            className="mb-3 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+          />
+        )}
+
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Judul (opsional)"
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-zinc-400"
+          />
+          <select
+            value={exportAspect}
+            onChange={(e) => setExportAspect(e.target.value as AspectRatio)}
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+          >
+            <option value="9:16">9:16</option>
+            <option value="1:1">1:1</option>
+            <option value="16:9">16:9</option>
+          </select>
+        </div>
+
+        <fieldset className="mb-4 rounded-xl border border-zinc-800 p-4">
+          <legend className="px-1 text-xs uppercase tracking-wide text-zinc-500">Skill Packs</legend>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                ["smartCover", "Smart Cover"],
+                ["smartHook", "Smart Hook"],
+                ["autoReframe", "Auto Reframe"],
+                ["captions", "Captions"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={skills[key]}
+                  onChange={(e) => setSkills((s) => ({ ...s, [key]: e.target.checked }))}
+                />
+                {label}
+              </label>
+            ))}
+            <label className="text-sm text-zinc-300">
+              Hook style
+              <select
+                value={skills.hookStyle}
+                onChange={(e) => setSkills((s) => ({ ...s, hookStyle: e.target.value as HookStyle }))}
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5"
+              >
+                {(["classic", "dark", "bold", "sticker", "clapper"] as HookStyle[]).map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm text-zinc-300">
+              Caption language
+              <select
+                value={skills.captionLanguage}
+                onChange={(e) =>
+                  setSkills((s) => ({
+                    ...s,
+                    captionLanguage: e.target.value as SkillPacks["captionLanguage"],
+                  }))
+                }
+                className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-1.5"
+              >
+                <option value="id">id</option>
+                <option value="en">en</option>
+                <option value="auto">auto</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+        >
+          {busy ? "Memproses..." : "Buat Clip"}
+        </button>
+      </form>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-medium">History</h2>
+          <button type="button" onClick={() => void refresh()} className="text-xs text-zinc-400 hover:text-white">
+            Refresh
+          </button>
+        </div>
+        {studios.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">
+            Belum ada studio.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        ) : (
+          <ul className="space-y-3">
+            {studios.map((s) => (
+              <li key={s.id} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <Link href={`/studios/${s.id}`} className="text-base font-medium hover:underline">
+                      {s.title}
+                    </Link>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {s.source} · {s.status}
+                      {s.clips?.length ? ` · ${s.clips.length} clips` : ""}
+                      {s.error ? ` · ${s.error}` : ""}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      s.status === "ready"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : s.status === "error"
+                          ? "bg-red-500/20 text-red-300"
+                          : "bg-amber-500/20 text-amber-200"
+                    }`}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
   );
 }

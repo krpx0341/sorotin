@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local clipper runtime
+/data
+/.venv
+__pycache__/
+*.pyc

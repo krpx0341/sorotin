@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  /* local filesystem worker app — disable Cache Components */
   turbopack: {
     rules: {
       "*.css": {
