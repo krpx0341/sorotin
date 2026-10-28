@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { proposeClips, type SceneCut, type SilenceGap } from "./clipper";
 import type {
   AspectRatio,
   ClipCandidate,
@@ -13,10 +14,17 @@ import type {
 } from "./types";
 import { loadStudio, mediaRoot, publicMediaUrl, saveStudio, studioDir } from "./store";
 
+export { proposeClips } from "./clipper";
+
 function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  opts: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    onStderr?: (chunk: string) => void;
+    onStdout?: (chunk: string) => void;
+  } = {},
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -26,10 +34,14 @@ function run(
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => {
-      stdout += d.toString();
+      const s = d.toString();
+      stdout += s;
+      opts.onStdout?.(s);
     });
     child.stderr.on("data", (d) => {
-      stderr += d.toString();
+      const s = d.toString();
+      stderr += s;
+      opts.onStderr?.(s);
     });
     child.on("error", reject);
     child.on("close", (code) => {
@@ -76,20 +88,64 @@ async function probeDuration(mediaPath: string): Promise<number> {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function downloadUrl(link: string, outDir: string): Promise<{ mediaPath: string; title: string }> {
+function parseYtDlpPct(line: string): number | null {
+  const m = line.match(/(\d{1,3}(?:\.\d+)?)%/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? Math.min(100, n) : null;
+}
+
+async function downloadUrl(
+  link: string,
+  outDir: string,
+  onProgress?: (pct: number, message: string) => void,
+): Promise<{ mediaPath: string; title: string }> {
   fs.mkdirSync(outDir, { recursive: true });
   const template = path.join(outDir, "source.%(ext)s");
-  await run("yt-dlp", [
-    "-f",
-    "bv*[height<=1080]+ba/b[height<=1080]/b",
-    "--merge-output-format",
-    "mp4",
-    "-o",
-    template,
-    "--no-playlist",
-    "--write-info-json",
-    link,
-  ]);
+  // Prefer 720p progressive/merged — much faster than 1080p dual-stream merge.
+  const format =
+    process.env.PERSONAL_CLIPPER_FORMAT ||
+    "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bv*[height<=720]+ba/b[height<=720]/b";
+
+  await run(
+    "yt-dlp",
+    [
+      "-f",
+      format,
+      "--merge-output-format",
+      "mp4",
+      "-o",
+      template,
+      "--no-playlist",
+      "--no-mtime",
+      "--newline",
+      "--concurrent-fragments",
+      process.env.PERSONAL_CLIPPER_FRAGMENTS || "8",
+      "--retries",
+      "5",
+      "--fragment-retries",
+      "5",
+      "--write-info-json",
+      "--no-write-comments",
+      "--no-write-thumbnail",
+      link,
+    ],
+    {
+      onStdout: (chunk) => {
+        for (const line of chunk.split("\n")) {
+          const pct = parseYtDlpPct(line);
+          if (pct != null) onProgress?.(pct, line.trim().slice(0, 120));
+        }
+      },
+      onStderr: (chunk) => {
+        for (const line of chunk.split("\n")) {
+          const pct = parseYtDlpPct(line);
+          if (pct != null) onProgress?.(pct, line.trim().slice(0, 120));
+        }
+      },
+    },
+  );
+
   const files = fs.readdirSync(outDir);
   const media = files.find((f) => /\.(mp4|mkv|webm|mov)$/i.test(f));
   if (!media) throw new Error("Download selesai tapi file video tidak ketemu");
@@ -122,6 +178,68 @@ async function extractAudio(mediaPath: string, audioPath: string) {
   ]);
 }
 
+async function detectSilences(audioPath: string): Promise<SilenceGap[]> {
+  try {
+    const { stderr } = await run("ffmpeg", [
+      "-hide_banner",
+      "-i",
+      audioPath,
+      "-af",
+      "silencedetect=noise=-30dB:d=0.45",
+      "-f",
+      "null",
+      "-",
+    ]);
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (const line of stderr.split("\n")) {
+      const s = line.match(/silence_start:\s*([0-9.]+)/);
+      if (s) starts.push(Number(s[1]));
+      const e = line.match(/silence_end:\s*([0-9.]+)/);
+      if (e) ends.push(Number(e[1]));
+    }
+    const gaps: SilenceGap[] = [];
+    const n = Math.min(starts.length, ends.length);
+    for (let i = 0; i < n; i++) {
+      if (ends[i] > starts[i]) gaps.push({ start: starts[i], end: ends[i] });
+    }
+    return gaps;
+  } catch {
+    return [];
+  }
+}
+
+async function detectScenes(mediaPath: string, durationSec: number): Promise<SceneCut[]> {
+  // Cap analysis window for long videos — first 20 min is enough for clip hunting seed.
+  const analyzeTo = Math.min(durationSec || 1200, 1200);
+  try {
+    const { stderr } = await run("ffmpeg", [
+      "-hide_banner",
+      "-ss",
+      "0",
+      "-t",
+      String(analyzeTo),
+      "-i",
+      mediaPath,
+      "-filter:v",
+      "select='gt(scene,0.32)',showinfo",
+      "-vsync",
+      "vfr",
+      "-f",
+      "null",
+      "-",
+    ]);
+    const cuts: SceneCut[] = [];
+    for (const line of stderr.split("\n")) {
+      const m = line.match(/pts_time:([0-9.]+)/);
+      if (m) cuts.push({ at: Number(m[1]) });
+    }
+    return cuts.slice(0, 80);
+  } catch {
+    return [];
+  }
+}
+
 async function transcribe(audioPath: string, language: SkillPacks["captionLanguage"]): Promise<{
   language: string;
   duration: number;
@@ -131,76 +249,9 @@ async function transcribe(audioPath: string, language: SkillPacks["captionLangua
     process.env.PERSONAL_CLIPPER_PYTHON ||
     path.join(process.env.HOME || "", ".hermes/cache/scratch/personal-clipper-venv/bin/python");
   const script = path.join(process.cwd(), "scripts", "transcribe.py");
-  const { stdout } = await run(py, [script, audioPath, "--language", language, "--model", "base"]);
+  const model = process.env.PERSONAL_CLIPPER_WHISPER_MODEL || "base";
+  const { stdout } = await run(py, [script, audioPath, "--language", language, "--model", model]);
   return JSON.parse(stdout);
-}
-
-/** Score windows by speech density + punctuation excitement. Deterministic, no cloud. */
-export function proposeClips(
-  segments: TranscriptSegment[],
-  durationSec: number,
-  opts: { targetSec?: number; maxClips?: number } = {},
-): ClipCandidate[] {
-  const target = opts.targetSec ?? 45;
-  const maxClips = opts.maxClips ?? 8;
-  if (!segments.length || durationSec <= 0) {
-    // fallback: evenly spaced windows
-    const clips: ClipCandidate[] = [];
-    const step = Math.max(target, durationSec / Math.max(1, maxClips));
-    for (let i = 0; i < maxClips && i * step < durationSec; i++) {
-      const start = Math.min(durationSec - 5, i * step);
-      const end = Math.min(durationSec, start + target);
-      if (end - start < 8) continue;
-      clips.push({
-        id: randomUUID(),
-        start: Number(start.toFixed(2)),
-        end: Number(end.toFixed(2)),
-        score: 0.2,
-        title: `Clip ${i + 1}`,
-        reason: "fallback window",
-      });
-    }
-    return clips;
-  }
-
-  const windows: ClipCandidate[] = [];
-  for (let i = 0; i < segments.length; i++) {
-    const start = segments[i].start;
-    let end = start;
-    let text = "";
-    let j = i;
-    while (j < segments.length && segments[j].end - start <= target + 10) {
-      end = segments[j].end;
-      text += (text ? " " : "") + segments[j].text;
-      j++;
-      if (end - start >= target) break;
-    }
-    if (end - start < 12) continue;
-    const words = text.trim().split(/\s+/).filter(Boolean).length;
-    const dens = words / Math.max(1, end - start);
-    const bang = (text.match(/[!?]|viral|tips|cara|rahasia|penting/gi) || []).length;
-    const score = dens * 0.7 + bang * 0.4 + Math.min(1, words / 40) * 0.3;
-    const title = text.trim().slice(0, 72) || `Clip ${windows.length + 1}`;
-    windows.push({
-      id: randomUUID(),
-      start: Number(start.toFixed(2)),
-      end: Number(Math.min(durationSec, end).toFixed(2)),
-      score: Number(score.toFixed(3)),
-      title,
-      reason: `speech dens=${dens.toFixed(2)} cues=${bang}`,
-    });
-  }
-
-  windows.sort((a, b) => b.score - a.score);
-  const picked: ClipCandidate[] = [];
-  for (const w of windows) {
-    if (picked.length >= maxClips) break;
-    const overlap = picked.some(
-      (p) => Math.min(p.end, w.end) - Math.max(p.start, w.start) > (w.end - w.start) * 0.45,
-    );
-    if (!overlap) picked.push(w);
-  }
-  return picked.sort((a, b) => a.start - b.start);
 }
 
 function aspectSize(aspect: AspectRatio): { w: number; h: number } {
@@ -228,11 +279,7 @@ async function renderClip(
 
   const vfParts: string[] = [];
   if (skills.autoReframe) {
-    // Center crop to target aspect, then scale.
-    vfParts.push(
-      `scale=${w}:${h}:force_original_aspect_ratio=increase`,
-      `crop=${w}:${h}`,
-    );
+    vfParts.push(`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`);
   } else {
     vfParts.push(
       `scale=${w}:${h}:force_original_aspect_ratio=decrease`,
@@ -272,6 +319,7 @@ async function renderClip(
   }
 
   const vf = vfParts.join(",");
+  // Input seeking first — much faster than decode-then-seek for long sources.
   await run("ffmpeg", [
     "-y",
     "-ss",
@@ -337,43 +385,68 @@ export async function processStudio(studioId: string) {
     fs.mkdirSync(work, { recursive: true });
 
     if (!current.mediaPath) {
-      bump({ status: "downloading" });
+      bump({ status: "downloading", progress: { pct: 1, message: "Menyiapkan download…" }, error: undefined });
       if (current.source === "upload") {
         if (!current.sourceUrl) throw new Error("upload path missing");
-        // sourceUrl for upload stores absolute path under media/
-        current = bump({ mediaPath: current.sourceUrl });
+        current = bump({
+          mediaPath: current.sourceUrl,
+          progress: { pct: 20, message: "Upload lokal siap" },
+        });
       } else {
         if (!current.sourceUrl) throw new Error("link missing");
-        const dl = await downloadUrl(current.sourceUrl, work);
+        let lastPct = 0;
+        const dl = await downloadUrl(current.sourceUrl, work, (pct, message) => {
+          // Map yt-dlp 0–100 into overall 5–35.
+          const mapped = Math.max(lastPct, Math.round(5 + pct * 0.3));
+          lastPct = mapped;
+          bump({
+            status: "downloading",
+            progress: { pct: mapped, message: message || `Download ${pct.toFixed(0)}%` },
+          });
+        });
         current = bump({
           mediaPath: dl.mediaPath,
           title: current.title === "Untitled" || !current.title ? dl.title : current.title,
+          progress: { pct: 35, message: "Download selesai" },
         });
       }
     }
 
     const durationSec = await probeDuration(current.mediaPath!);
-    current = bump({ durationSec });
+    current = bump({ durationSec, progress: { pct: 38, message: `Durasi ${Math.round(durationSec)}s` } });
 
     const audioPath = path.join(studioDir(studioId), "audio.wav");
-    bump({ status: "transcribing" });
+    bump({ status: "transcribing", progress: { pct: 42, message: "Ekstrak audio…" } });
     await extractAudio(current.mediaPath!, audioPath);
+    bump({ progress: { pct: 48, message: "Whisper transcribe…" } });
     const tr = await transcribe(audioPath, current.skills.captionLanguage);
     current = bump({
       audioPath,
       transcript: tr.segments,
       durationSec: tr.duration || durationSec,
+      progress: { pct: 62, message: `${tr.segments.length} segmen transcript` },
     });
 
-    bump({ status: "clipping" });
-    const candidates = proposeClips(current.transcript || [], current.durationSec || durationSec);
+    bump({ status: "clipping", progress: { pct: 66, message: "Deteksi silence + scene…" } });
+    const [silences, scenes] = await Promise.all([
+      detectSilences(audioPath),
+      detectScenes(current.mediaPath!, current.durationSec || durationSec),
+    ]);
+    const candidates = proposeClips(current.transcript || [], current.durationSec || durationSec, {
+      targetSec: Number(process.env.PERSONAL_CLIPPER_TARGET_SEC || 40),
+      maxClips: Number(process.env.PERSONAL_CLIPPER_MAX_CLIPS || 8),
+      silences,
+      scenes,
+    });
     current = bump({
       clips: candidates.map((c) => ({ ...c, status: "pending" as const })),
       status: "rendering",
+      progress: { pct: 72, message: `Render ${candidates.length} clip…` },
     });
 
     const rendered: RenderedClip[] = [];
-    for (const c of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
       try {
         rendered.push(await renderClip(current, c, current.skills, current.exportAspect));
       } catch (e) {
@@ -383,12 +456,27 @@ export async function processStudio(studioId: string) {
           error: e instanceof Error ? e.message : String(e),
         });
       }
-      bump({ clips: [...rendered, ...candidates.slice(rendered.length).map((x) => ({ ...x, status: "pending" as const }))] });
+      const pct = 72 + Math.round(((i + 1) / Math.max(1, candidates.length)) * 26);
+      bump({
+        clips: [
+          ...rendered,
+          ...candidates.slice(rendered.length).map((x) => ({ ...x, status: "pending" as const })),
+        ],
+        progress: { pct, message: `Render clip ${i + 1}/${candidates.length}` },
+      });
     }
 
-    bump({ clips: rendered, status: "ready" });
+    bump({
+      clips: rendered,
+      status: "ready",
+      progress: { pct: 100, message: "Selesai" },
+    });
   } catch (e) {
-    bump({ status: "error", error: e instanceof Error ? e.message : String(e) });
+    bump({
+      status: "error",
+      error: e instanceof Error ? e.message : String(e),
+      progress: { pct: 100, message: "Gagal" },
+    });
   }
 }
 

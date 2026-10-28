@@ -92,6 +92,21 @@ export default function StudioDetailPage() {
         </button>
       </header>
 
+      {studio.progress && (
+        <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="text-zinc-300">{studio.progress.message}</span>
+            <span className="text-zinc-500">{studio.progress.pct}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-emerald-400 transition-all"
+              style={{ width: `${Math.max(2, studio.progress.pct)}%` }}
+            />
+          </div>
+        </section>
+      )}
+
       <section className="rounded-xl border border-zinc-800 p-4">
         <h2 className="mb-3 text-sm font-medium text-zinc-300">Skill Packs</h2>
         <div className="grid gap-3 sm:grid-cols-2">

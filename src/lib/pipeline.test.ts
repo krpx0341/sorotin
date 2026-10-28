@@ -1,4 +1,4 @@
-import { proposeClips } from "@/lib/pipeline";
+import { proposeClips, windowsFromSilence, windowsFromTranscript } from "@/lib/clipper";
 import type { TranscriptSegment } from "@/lib/types";
 import { describe, expect, it } from "vitest";
 
@@ -23,5 +23,36 @@ describe("proposeClips", () => {
   it("falls back when transcript empty", () => {
     const clips = proposeClips([], 120, { targetSec: 40, maxClips: 3 });
     expect(clips.length).toBeGreaterThan(0);
+  });
+
+  it("uses silence islands when speech empty", () => {
+    const clips = proposeClips([], 100, {
+      targetSec: 30,
+      maxClips: 4,
+      silences: [
+        { start: 10, end: 12 },
+        { start: 45, end: 47 },
+        { start: 80, end: 82 },
+      ],
+    });
+    expect(clips.length).toBeGreaterThan(0);
+    expect(clips.some((c) => c.reason.includes("speech island") || c.reason.includes("silence"))).toBe(
+      true,
+    );
+  });
+
+  it("builds transcript and silence windows", () => {
+    const segments = windowsFromTranscript(
+      [
+        { start: 0, end: 5, text: "halo" },
+        { start: 5, end: 20, text: "cara viral tips penting sekali" },
+        { start: 40, end: 70, text: "bagian biasa saja tanpa hook" },
+      ],
+      90,
+      30,
+    );
+    expect(segments.length).toBeGreaterThan(0);
+    const fromSilence = windowsFromSilence([{ start: 20, end: 22 }], 90, 30);
+    expect(fromSilence.length).toBeGreaterThan(0);
   });
 });

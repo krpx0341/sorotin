@@ -45,6 +45,11 @@ export type RenderedClip = ClipCandidate & {
   error?: string;
 };
 
+export type StudioProgress = {
+  pct: number;
+  message: string;
+};
+
 export type Studio = {
   id: string;
   title: string;
@@ -54,6 +59,7 @@ export type Studio = {
   updatedAt: string;
   status: StudioStatus;
   error?: string;
+  progress?: StudioProgress;
   skills: SkillPacks;
   mediaPath?: string;
   audioPath?: string;

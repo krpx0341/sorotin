@@ -227,6 +227,20 @@ export default function HomePage() {
                       {s.clips?.length ? ` · ${s.clips.length} clips` : ""}
                       {s.error ? ` · ${s.error}` : ""}
                     </p>
+                    {s.progress && s.status !== "ready" && (
+                      <div className="mt-2 max-w-md">
+                        <div className="mb-1 flex justify-between text-[11px] text-zinc-500">
+                          <span className="truncate pr-2">{s.progress.message}</span>
+                          <span>{s.progress.pct}%</span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
+                          <div
+                            className="h-full rounded-full bg-emerald-400 transition-all"
+                            style={{ width: `${Math.max(2, s.progress.pct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
