@@ -226,10 +226,13 @@ async function bundlePython() {
     "pip",
     "install",
     "faster-whisper",
-    "opencv-python-headless>=4.8,<5",
+    "opencv-python-headless>=4.8,<6",
     "pillow",
   ]);
-  run(py, ["-c", "import faster_whisper, cv2, PIL; print('python ok')"]);
+  run(py, [
+    "-c",
+    "import faster_whisper, cv2, PIL; assert hasattr(cv2, 'FaceDetectorYN'), cv2.__version__; print('python ok', cv2.__version__)",
+  ]);
   writeFileSync(path.join(pythonDir, ".sorotin-ok"), "ok\n");
   console.log("python", py);
 }
@@ -257,7 +260,8 @@ function bundleScripts() {
   rmSync(dest, { recursive: true, force: true });
   cpSync(path.join(root, "scripts"), dest, {
     recursive: true,
-    filter: (p) => !p.endsWith(".mjs") && !p.includes("bundle-sidecars"),
+    filter: (p) =>
+      !p.endsWith(".mjs") && !p.includes("bundle-sidecars") && !path.basename(p).startsWith("test_"),
   });
   console.log("scripts", dest);
 }
@@ -273,6 +277,8 @@ function verify() {
   const out = `${ass.stdout || ""}\n${ass.stderr || ""}`;
   if (!/\bass\b/.test(out)) throw new Error("bundled ffmpeg has no ass filter (need libass)");
   if (!/\bdrawtext\b/.test(out)) throw new Error("bundled ffmpeg has no drawtext filter");
+  const yunet = path.join(res, "scripts", "models", "face_detection_yunet_2023mar.onnx");
+  if (!existsSync(yunet)) throw new Error(`missing YuNet model (bundled with scripts): ${yunet}`);
   console.log("verify ok");
 }
 

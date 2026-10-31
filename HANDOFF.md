@@ -55,8 +55,10 @@ pnpm lint           # eslint
 **Python** (tested 3.14). Default interpreter is `~/.hermes/cache/scratch/personal-clipper-venv/bin/python`; override with `PERSONAL_CLIPPER_PYTHON`.
 ```bash
 python3 -m venv ~/.hermes/cache/scratch/personal-clipper-venv
-~/.hermes/cache/scratch/personal-clipper-venv/bin/pip install faster-whisper "opencv-python-headless>=4.8,<5" pillow
-# tested: faster-whisper 1.2.1, ctranslate2 4.8.4, opencv-python-headless 4.14, pillow 13.0, numpy 2.5
+~/.hermes/cache/scratch/personal-clipper-venv/bin/pip install faster-whisper "opencv-python-headless>=4.8,<6" pillow
+# tested: faster-whisper 1.2.1, ctranslate2 4.8.4, opencv-python-headless 4.14 and 5.0, pillow 13.0, numpy 2.5
+# Face detection uses YuNet (cv2.FaceDetectorYN). OpenCV 4.8+ and 5.x both work.
+# The model ships at scripts/models/face_detection_yunet_2023mar.onnx (Apache-2.0, ~230 KB).
 ```
 
 | Script | What it does |
@@ -134,7 +136,7 @@ python3 -m venv ~/.hermes/cache/scratch/personal-clipper-venv
 5. **Render each clip** — `renderClip()`:
    - **Shots:** `faceCropCenter()` runs `scripts/face_track.py` for the window. One sequential decode:
      - hard-cut detection from 64×36 frame signatures
-     - Haar faces + eyes + skin filter + content-rect (inset) detection every 0.5s
+     - YuNet faces (OpenCV 4 and 5) + landmark eyes + skin filter + content-rect (inset) detection every 0.5s
      - per shot: `plan_segment()` → `single | dual | center`
      - `resolve_shots()`: short or face-less shots borrow the crop of the most similar reliable-face shot (same camera angle via signature distance ≤ `SAME_ANGLE_DIFF`)
      - flash frames: a hard cut within `EDGE_TRIM` = 0.2s of a clip edge → `trim_start` / `trim_end`, and `renderClip` shifts `clip.start` / `clip.end`
@@ -189,7 +191,7 @@ UI copy is Indonesian.
 
 - `pnpm typecheck` ✔
 - `pnpm lint` ✔ 0 problems
-- `pnpm test` ✔ **46 tests in 7 files**: `ai`, `model-catalog`, `pipeline`, `reframe`, `robustness`, `scoring`, `title` (`*.test.ts` in `src/lib/`)
+- `pnpm test` ✔ vitest (`*.test.ts` in `src/lib/`, including the face_track failure fallback). `pnpm typecheck` runs `next typegen` first so `LayoutProps` exists. Python: `python -m unittest discover -s scripts -p 'test_*.py'` on OpenCV 4 and 5.
 - `scripts/*.py` have no automated tests. Verify visually by extracting frames, e.g.
   `ffmpeg -i data/studios/<id>/clips/<clip>/9x16.mp4 -vf "select=lt(n\,3),tile=3x1" -frames:v 1 out.jpg`
 - Reference studio used for QA: `a0194883-24e4-49a0-aa41-dd4fb03454c5` (45-min podcast, 8 clips, AI-scored 37–66).
@@ -197,11 +199,7 @@ UI copy is Indonesian.
 ## 5. Known limitations / TODO (ranked by impact)
 
 1. **Soft output from 720p sources.** Face crops upscale a ~300–400px wide region to 1080 wide. Prefer ≥1080p downloads (`PERSONAL_CLIPPER_FORMAT`) and/or add sharpening / a better scaler (lanczos + mild unsharp), or warn in the UI when the source height < 1080.
-2. **Split (dual) layout when faces sit at the frame edge.** The pane crop is clamped to the frame, so an edge face ends up off-centre in its pane. Two improvements:
-   - fall back to single when a face is within ~8% of the edge, or
-   - pad/blur-fill the pane.
-
-   Detection is Haar-based. A DNN detector (OpenCV YuNet) would cut false positives (posters, figurines) and miss fewer profiles.
+2. **Edge faces are blur-padded, not regenerated.** YuNet replaced Haar (`CascadeClassifier` is gone in OpenCV 5, and Haar missed large close-ups). When a 9:16 window cannot slide far enough to center a face, the crop keeps the in-frame slice and blur-fills the gap so the face stays near the middle of the pane. Posters can still false-trigger if they pass the skin check. Active-speaker switching inside one shot is still out of scope (item 7).
 3. **Local (no-AI) titles are weak.** `localTitle()` / `cleanStudioTitle()` can't fix Whisper noise or restore censored words; quality is ~50/50. AI titles are good. Options: a small local LLM, or better sentence scoring.
 4. **`/api/files` reads whole files into memory and has no HTTP Range support.** Seeking in long previews is poor and memory use is high. `Cache-Control: max-age=60` on a constant URL can show a stale preview right after a re-render (add `?v=updatedAt`). Stream with Range instead.
 5. **Dev-only server; jobs live in the web process.** Jobs run in-process (`next dev`). A restart marks running studios as interrupted (by design), but there is no queue, no concurrency limit and no resume. `next build`/`start` hasn't been exercised recently. Turbopack's watcher once missed `globals.css` edits made with `sed -i` (fixed by restarting `pnpm dev`).

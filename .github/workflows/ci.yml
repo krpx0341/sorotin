@@ -21,3 +21,18 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # YuNet (cv2.FaceDetectorYN) must load on both major versions.
+        opencv: ["opencv-python-headless>=4.8,<5", "opencv-python-headless>=5,<6"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "${{ matrix.opencv }}" "numpy>=1.26"
+      - run: python -m unittest discover -s scripts -p 'test_*.py' -v

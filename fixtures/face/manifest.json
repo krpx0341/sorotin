@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "created": "2026-11-01 WIB",
+  "repo": "krpx0341/sorotin",
+  "repo_commit": "9716482",
+  "tool": "scripts/face_track.py --start 0 --end <duration> --allow-dual (YuNet)",
+  "env": {
+    "python": "3.13.5",
+    "venv": "/workspace/qa/venv",
+    "lock": "/workspace/qa/requirements-lock.txt",
+    "opencv_python_headless": "4.14.0.94",
+    "numpy": "2.5.4",
+    "ffmpeg": "7.1.5-0+deb13u1"
+  },
+  "regen": "FIXTURE_DIR=/path/to/mp4s python3 fixtures/face/run_face_fixtures.py",
+  "note": "Videos are not in git. Rebuild each fixture from source_file_url with ffmpeg_command (run from a directory that contains raw/<source file>). QA sha256 was produced with ffmpeg 7.1.5. A rebuild with ffmpeg 6.1.1 produced different bytes from the same filter graph; the runner warns and continues. ours.mp4 is local-only (unclear license): set OURS_MP4, never commit it or frames from it.",
+  "fixtures": [
+    {
+      "file": "center_single.mp4",
+      "sha256": "f3eb07a1f091c16efa5cd8759be658f73102f54d958858f4199de5405b616dad",
+      "duration_sec": 40.04,
+      "resolution": "1280x720",
+      "video_codec": "h264",
+      "has_audio": true,
+      "case": "satu orang bicara, wajah dekat tengah",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Science_Speaks_-_Talking_to_Women_in_Science_(Sudha,_Medical_Officer).webm",
+      "source_file_url": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Science_Speaks_-_Talking_to_Women_in_Science_%28Sudha%2C_Medical_Officer%29.webm",
+      "source_sha256": "4fb447b15e7106f8b440a2fd2b172dc27e18a58e018eeab6dee18c4e86e0e23d",
+      "license": "Public domain (US federal government work, NIOSH)",
+      "author": "National Institute for Occupational Safety and Health (NIOSH)",
+      "attribution": "National Institute for Occupational Safety and Health (NIOSH), via Wikimedia Commons (Public domain (US federal government work, NIOSH)). Dipotong dan di-encode ulang.",
+      "source_trim": "194-234 s",
+      "modifications": "dipotong 40 s, crop 1024x576 di x=294 supaya wajah ke tengah, scale ke 1280x720",
+      "ffmpeg_command": "ffmpeg -ss 194 -t 40 -i raw/sudha.webm -vf \"crop=1024:576:294:0,scale=1280:720:flags=lanczos,setsar=1\" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -map_metadata -1 center_single.mp4",
+      "expected": {
+        "faces": 1,
+        "face_cx": [
+          0.48,
+          0.62
+        ],
+        "face_cy": [
+          0.3,
+          0.45
+        ],
+        "layout": "single",
+        "crop_cx_within_face": 0.05,
+        "hard_cuts": 0,
+        "notes": "Tanpa kartu teks (kartu di sumber 188-193.5 s dan 234.3 s dilewati).",
+        "min_hit_rate": 0.95
+      },
+      "baseline_log": "baseline/center_single.log",
+      "sha256_qa": "f3eb07a1f091c16efa5cd8759be658f73102f54d958858f4199de5405b616dad",
+      "sha256_rebuild_ffmpeg_6_1_1": "e50672dd8e3e6bff84ba655df7ad5e62df98b2d3f4b917d1d9bbc71917ba59fb",
+      "sha256_note": "sha256 is QA's ffmpeg 7.1.5 encode. sha256_rebuild_ffmpeg_6_1_1 is this repo's rebuild; either is acceptable."
+    },
+    {
+      "file": "edge_face_right.mp4",
+      "sha256": "855367ef06a7588c59fcd6fa8b77b3d906ee92dfe3f8f0eba35c32d2abe1a7d0",
+      "duration_sec": 30.063,
+      "resolution": "1280x720",
+      "video_codec": "h264",
+      "has_audio": true,
+      "case": "wajah di tepi kanan frame",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Science_Speaks_-_Talking_to_Women_in_Science_(Sudha,_Medical_Officer).webm",
+      "source_file_url": "https://upload.wikimedia.org/wikipedia/commons/d/d9/Science_Speaks_-_Talking_to_Women_in_Science_%28Sudha%2C_Medical_Officer%29.webm",
+      "source_sha256": "4fb447b15e7106f8b440a2fd2b172dc27e18a58e018eeab6dee18c4e86e0e23d",
+      "license": "Public domain (US federal government work, NIOSH)",
+      "author": "National Institute for Occupational Safety and Health (NIOSH)",
+      "attribution": "National Institute for Occupational Safety and Health (NIOSH), via Wikimedia Commons (Public domain (US federal government work, NIOSH)). Dipotong dan di-encode ulang.",
+      "source_trim": "194-224 s",
+      "modifications": "dipotong 30 s, crop 912x513 di x=0 supaya wajah mepet tepi kanan, scale ke 1280x720",
+      "ffmpeg_command": "ffmpeg -ss 194 -t 30 -i raw/sudha.webm -vf \"crop=912:513:0:0,scale=1280:720:flags=lanczos,setsar=1\" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -map_metadata -1 edge_face_right.mp4",
+      "expected": {
+        "faces": 1,
+        "face_cx": [
+          0.82,
+          0.92
+        ],
+        "face_right_edge_gt": 0.95,
+        "layout": "single",
+        "notes": "Detection >= 90% of samples. The 9:16 window cannot slide far enough to center this face inside the frame, so the crop carries place_* and the renderer blur-fills the gap. The face should land near the middle of the output pane (output_cx) and stay fully inside the sharp slice.",
+        "min_hit_rate": 0.9,
+        "output_cx": [
+          0.42,
+          0.58
+        ]
+      },
+      "baseline_log": "baseline/edge_face_right.log",
+      "sha256_qa": "855367ef06a7588c59fcd6fa8b77b3d906ee92dfe3f8f0eba35c32d2abe1a7d0",
+      "sha256_rebuild_ffmpeg_6_1_1": "eefc89cb0612067aa48caddfb1ef2e6be84935eb3326a62a5a701ea3e1064eae",
+      "sha256_note": "sha256 is QA's ffmpeg 7.1.5 encode. sha256_rebuild_ffmpeg_6_1_1 is this repo's rebuild; either is acceptable."
+    },
+    {
+      "file": "two_people.mp4",
+      "sha256": "71bbe87b2c3902d1588c9d23fffdeb46d54e11ad1ccc00bb4232e9716e3c9c6c",
+      "duration_sec": 40.007,
+      "resolution": "1920x1080",
+      "video_codec": "h264",
+      "has_audio": true,
+      "case": "dua orang dalam satu frame",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Video_Blog-_CBP_Super_Bowl_LII_Countdown_to_Kickoff_-_Day_1.webm",
+      "source_file_url": "https://upload.wikimedia.org/wikipedia/commons/2/2e/Video_Blog-_CBP_Super_Bowl_LII_Countdown_to_Kickoff_-_Day_1.webm",
+      "source_sha256": "995fea1d94287c8fd9e952bf30752ae82b4b7ec9f124b934bd9a782b30f5c01d",
+      "license": "Public domain (US federal government work, CBP)",
+      "author": "Mani Albrecht, U.S. Customs and Border Protection",
+      "attribution": "Mani Albrecht, U.S. Customs and Border Protection, via Wikimedia Commons (Public domain (US federal government work, CBP)). Dipotong dan di-encode ulang.",
+      "source_trim": "0-40 s",
+      "modifications": "dipotong 40 s, re-encode",
+      "ffmpeg_command": "ffmpeg -ss 0 -t 40 -i raw/cbp_day1.webm -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -map_metadata -1 two_people.mp4",
+      "expected": {
+        "faces": 2,
+        "face_cx": [
+          [
+            0.25,
+            0.38
+          ],
+          [
+            0.7,
+            0.85
+          ]
+        ],
+        "layout": "dual (dengan --allow-dual)",
+        "hard_cuts": 0,
+        "notes": "Kamera bergerak/zoom pelan sekitar 12-14 s, bukan hard cut. Lower-third 'CPA Douglas Harrison' muncul ~13-22 s di kiri bawah.",
+        "min_hit_rate": 0.85
+      },
+      "baseline_log": "baseline/two_people.log",
+      "sha256_qa": "71bbe87b2c3902d1588c9d23fffdeb46d54e11ad1ccc00bb4232e9716e3c9c6c",
+      "sha256_rebuild_ffmpeg_6_1_1": "fb43abe95b8d326618be4cff97425792a7cef40660f103f32ebe073c9b6e05d6",
+      "sha256_note": "sha256 is QA's ffmpeg 7.1.5 encode. sha256_rebuild_ffmpeg_6_1_1 is this repo's rebuild; either is acceptable."
+    },
+    {
+      "file": "closeup_large.mp4",
+      "sha256": "be8dc45c3d40937281f15c287b4bc9a296914c17724b3d382df154257e91fccc",
+      "duration_sec": 40.042,
+      "resolution": "1920x1080",
+      "video_codec": "h264",
+      "has_audio": true,
+      "case": "close-up besar, wajah ~23% lebar dan ~40% tinggi frame",
+      "source_page": "https://commons.wikimedia.org/wiki/File:Internet_Hall_of_Fame_2014_Michael_Kende_interview.webm",
+      "source_file_url": "https://upload.wikimedia.org/wikipedia/commons/6/6d/Internet_Hall_of_Fame_2014_Michael_Kende_interview.webm",
+      "source_sha256": "154fdef10f3ede0d42f2431c2a4a1769e0280b2eb18b265ba699ce050e8028eb",
+      "license": "CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/)",
+      "author": "ImaginingtheInternet",
+      "attribution": "\"Internet Hall of Fame 2014 Michael Kende interview\" by ImaginingtheInternet, CC BY 3.0, via Wikimedia Commons. Trimmed to 40 s and re-encoded to H.264/AAC.",
+      "source_trim": "20-60 s",
+      "modifications": "dipotong 40 s (lewati lower-third di awal), re-encode",
+      "ffmpeg_command": "ffmpeg -ss 20 -t 40 -i raw/kende.webm -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -map_metadata -1 closeup_large.mp4",
+      "expected": {
+        "faces": 1,
+        "face_cx": [
+          0.38,
+          0.52
+        ],
+        "face_cy": [
+          0.18,
+          0.35
+        ],
+        "layout": "single",
+        "crop_cx_within_face": 0.05,
+        "hard_cuts": 0,
+        "notes": "Kontrol untuk Bug B: close-up 16:9 ini terdeteksi normal.",
+        "min_hit_rate": 0.95
+      },
+      "baseline_log": "baseline/closeup_large.log",
+      "sha256_qa": "be8dc45c3d40937281f15c287b4bc9a296914c17724b3d382df154257e91fccc",
+      "sha256_rebuild_ffmpeg_6_1_1": "d9008274d20304b18db14e96f5f1ea0012b0e670b7c67eea03568d0f9ca688d6",
+      "sha256_note": "sha256 is QA's ffmpeg 7.1.5 encode. sha256_rebuild_ffmpeg_6_1_1 is this repo's rebuild; either is acceptable."
+    },
+    {
+      "file": "ours.mp4",
+      "sha256": "234e3c8614ee040bb303bfb1045867457cb7e4203d44a744a5cdc6e3a22f1d5e",
+      "duration_sec": 37.8,
+      "resolution": "1080x1920",
+      "case": "sumber 9:16 (hasil render Sorotin lama), close-up wajah mepet kanan + bar biru kiri; dipakai untuk Bug B",
+      "source_page": null,
+      "license": "TIDAK JELAS, milik internal/konten pihak ketiga. Jangan di-commit ke repo; hanya referensi lokal.",
+      "expected": {
+        "faces": 1,
+        "face_cx": [
+          0.7,
+          0.95
+        ],
+        "notes": "Local reference only. Do not commit the file or frames derived from it. Close-up from 3.7s to 37.7s should be detected in >= 80% of samples, one face, cx 0.70-0.95.",
+        "min_hit_rate": 0.8,
+        "eval_start": 3.7,
+        "eval_end": 37.7
+      },
+      "baseline_log": "../bugs/face-track-repro.md",
+      "optional": true,
+      "env_path": "OURS_MP4"
+    }
+  ]
+}

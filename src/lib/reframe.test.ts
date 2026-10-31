@@ -38,6 +38,24 @@ describe("buildReframeGraph", () => {
     const g = buildReframeGraph([{ start: 0, end: 5, layout: "single", crops: [crop(486)] }], 1080, 1920);
     expect(g).toBe("[0:v]crop=404:720:486:0,scale=1080:1920:flags=lanczos,setsar=1[base]");
   });
+  it("edge pad keeps the sharp slice and blur-fills the rest of the pane", () => {
+    const segs = parseSegments(
+      [
+        {
+          start: 0,
+          end: 5,
+          layout: "single",
+          crops: [{ x: 914, y: 0, w: 366, h: 720, place_x: 0, place_y: 0, place_w: 0.904, place_h: 1 }],
+        },
+      ],
+      true,
+    );
+    expect(segs[0].crops[0].place?.w).toBeCloseTo(0.904, 3);
+    const g = buildReframeGraph(segs, 1080, 1920);
+    expect(g).toContain("crop=366:720:914:0");
+    expect(g).toContain("boxblur=");
+    expect(g).toContain("overlay=");
+  });
   it("mixed single/dual segments trim+concat with open-ended first/last trims", () => {
     const g = buildReframeGraph(
       [
