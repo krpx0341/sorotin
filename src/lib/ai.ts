@@ -1,8 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { loadAiSettings, normalizeOpenAiBase } from "./ai-settings";
+import { loadAiSettings, resolveAiEndpoint } from "./ai-settings";
 import { overlaps } from "./clipper";
 import { combineParts, gradesFromParts, sanitizeHook, sanitizeTitle } from "./scoring";
 import type { ClipCandidate, ClipScoring, TranscriptSegment, ViralityGrades } from "./types";
+
+export class AiEndpointError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiEndpointError";
+  }
+}
+
+/** Saved key stays on the saved base URL. Throws before any fetch otherwise. */
+function endpointOrThrow(opts?: { baseUrl?: string; apiKey?: string }) {
+  const resolved = resolveAiEndpoint({ baseUrl: opts?.baseUrl, apiKey: opts?.apiKey }, loadAiSettings());
+  if (!resolved.ok) throw new AiEndpointError(resolved.message);
+  return resolved;
+}
 
 export type AiModel = { id: string; owned_by?: string };
 
@@ -42,9 +56,7 @@ export function friendlyAiError(e: unknown, baseUrl = ""): string {
 const modelCache = new Map<string, { at: number; models: AiModel[] }>();
 
 export async function listAiModels(opts?: Endpoint & { refresh?: boolean; timeoutMs?: number }): Promise<AiModel[]> {
-  const settings = loadAiSettings();
-  const base = normalizeOpenAiBase(opts?.baseUrl || settings.baseUrl);
-  const apiKey = opts?.apiKey ?? settings.apiKey;
+  const { baseUrl: base, apiKey } = endpointOrThrow(opts);
   const key = `${base}|${apiKey}`;
   const hit = modelCache.get(key);
   if (hit && !opts?.refresh && Date.now() - hit.at < 5 * 60_000) return hit.models;
@@ -113,12 +125,11 @@ export async function chatCompletion(opts: Endpoint & {
   maxTokens?: number;
   timeoutMs?: number;
 }): Promise<{ text: string; ms: number }> {
-  const settings = loadAiSettings();
-  const base = normalizeOpenAiBase(opts.baseUrl || settings.baseUrl);
+  const { baseUrl: base, apiKey } = endpointOrThrow(opts);
   const t0 = Date.now();
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
-    headers: authHeaders(opts.apiKey ?? settings.apiKey),
+    headers: authHeaders(apiKey),
     signal: AbortSignal.timeout(opts.timeoutMs ?? 240_000),
     body: JSON.stringify({
       model: opts.model,
@@ -137,9 +148,7 @@ export async function chatCompletion(opts: Endpoint & {
 
 /** Tiny real call used by Settings → "Tes koneksi". */
 export async function testAiConnection(opts: Endpoint & { model?: string }) {
-  const settings = loadAiSettings();
-  const baseUrl = normalizeOpenAiBase(opts.baseUrl || settings.baseUrl);
-  const apiKey = opts.apiKey || settings.apiKey;
+  const { baseUrl, apiKey } = endpointOrThrow(opts);
   const out: {
     baseUrl: string;
     endpoint: { ok: boolean; ms: number; modelCount?: number; error?: string };
@@ -150,6 +159,7 @@ export async function testAiConnection(opts: Endpoint & { model?: string }) {
     const models = await listAiModels({ baseUrl, apiKey, refresh: true, timeoutMs: 15_000 });
     out.endpoint = { ok: true, ms: Date.now() - t0, modelCount: models.length };
   } catch (e) {
+    if (e instanceof AiEndpointError) throw e;
     out.endpoint = { ok: false, ms: Date.now() - t0, error: friendlyAiError(e, baseUrl) };
     return out;
   }
@@ -172,6 +182,7 @@ export async function testAiConnection(opts: Endpoint & { model?: string }) {
       out.model = { id: opts.model, ok: true, ms: Date.now() - t0, reply: reply || "(kosong)" };
       if (!reply) out.model = { ...out.model, ok: false, error: "Model menjawab kosong" };
     } catch (e) {
+      if (e instanceof AiEndpointError) throw e;
       out.model = { id: opts.model, ok: false, ms: Date.now() - t0, error: friendlyAiError(e, baseUrl) };
     }
   }

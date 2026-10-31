@@ -13,6 +13,7 @@ import {
   VIDEO_EXT_RE,
 } from "@/lib/pipeline";
 import { denyIfUnlicensed } from "@/lib/license-guard";
+import { guardApiRequest } from "@/lib/request-guard";
 import { listStudios, loadStudio, mergeSkills, saveStudio } from "@/lib/store";
 import type { Studio } from "@/lib/types";
 
@@ -44,6 +45,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = guardApiRequest(req, { allowMultipart: true });
+  if (blocked) return blocked;
   const denied = denyIfUnlicensed();
   if (denied) return denied;
   const contentType = req.headers.get("content-type") || "";
@@ -144,6 +147,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const blocked = guardApiRequest(req);
+  if (blocked) return blocked;
   const denied = denyIfUnlicensed();
   if (denied) return denied;
   const body = z

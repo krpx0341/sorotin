@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import { denyIfUnlicensed } from "@/lib/license-guard";
+import { guardApiRequest } from "@/lib/request-guard";
 import { downloadsDir, openLocal, safeFileName, uniqueDest } from "@/lib/local-file";
 import { resolvePublicFile } from "@/lib/store";
 
 export async function POST(req: NextRequest) {
+  const blocked = guardApiRequest(req);
+  if (blocked) return blocked;
   const denied = denyIfUnlicensed();
   if (denied) return denied;
   let body: { path?: string; filename?: string; play?: boolean };
