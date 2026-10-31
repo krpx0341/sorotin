@@ -18,7 +18,9 @@ python3 -m venv ~/.hermes/cache/scratch/personal-clipper-venv
 pnpm dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:3000. `pnpm dev` and `pnpm start` listen on 127.0.0.1 only, so other machines on the network cannot open the app.
+
+`pnpm dev:lan` binds `0.0.0.0` when you intentionally want LAN access. Use it only on a network you trust: a client that can reach the port and omits the `Origin` header is treated as a local caller.
 
 Needs on PATH: `ffmpeg`, `ffprobe`, `yt-dlp`.
 
