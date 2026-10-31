@@ -169,6 +169,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ baseUrl, ...(apiKey ? { apiKey } : {}), ...(model ? { model } : {}) }),
       });
       const j = await r.json();
+      if (!r.ok || !j.status) throw new Error(j.message || "Tes koneksi gagal");
       const d = j.data as TestResult;
       setTest(d);
       if (d.endpoint.ok) {

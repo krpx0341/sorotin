@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { aiSettingsSchema, loadAiSettings, publicAiSettings, saveAiSettings } from "@/lib/ai-settings";
+import { loadAiSettings, mergeAiSettingsUpdate, pickSettingsPatch, publicAiSettings, saveAiSettings } from "@/lib/ai-settings";
+import { guardApiRequest } from "@/lib/request-guard";
 
 export async function GET() {
   return NextResponse.json({ status: true, data: publicAiSettings() });
 }
 
 export async function PUT(req: NextRequest) {
+  const denied = guardApiRequest(req);
+  if (denied) return denied;
   const body = await req.json();
-  const parsed = aiSettingsSchema.partial().parse(body);
-  // Keep existing key if client sends blank while has key already.
-  if (parsed.apiKey === "" && loadAiSettings().apiKey) {
-    delete parsed.apiKey;
-  }
-  const saved = saveAiSettings(parsed);
+  const saved = saveAiSettings(mergeAiSettingsUpdate(loadAiSettings(), pickSettingsPatch(body)));
   return NextResponse.json({ status: true, data: publicAiSettings(saved) });
 }

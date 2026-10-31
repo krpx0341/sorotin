@@ -7,8 +7,11 @@ import {
   loadLicenseFile,
   setLicenseServerUrl,
 } from "@/lib/license";
+import { guardApiRequest } from "@/lib/request-guard";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const blocked = guardApiRequest(req);
+  if (blocked) return blocked;
   const file = loadLicenseFile();
   const status =
     file.lease && Date.now() / 1000 - (file.lease.last_ok || file.lease.issued_at) > 12 * 3600
@@ -18,6 +21,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = guardApiRequest(req);
+  if (blocked) return blocked;
   const body = (await req.json().catch(() => ({}))) as {
     action?: string;
     key?: string;

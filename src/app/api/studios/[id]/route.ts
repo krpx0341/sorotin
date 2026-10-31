@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isBusyStatus, stopJob } from "@/lib/jobs";
 import { denyIfUnlicensed } from "@/lib/license-guard";
+import { guardApiRequest } from "@/lib/request-guard";
 import { processStudio, rerenderStudio } from "@/lib/pipeline";
 import { loadStudio, saveStudio } from "@/lib/store";
 
@@ -16,6 +17,8 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
 }
 
 export async function POST(req: NextRequest, ctx: Ctx) {
+  const blocked = guardApiRequest(req);
+  if (blocked) return blocked;
   const denied = denyIfUnlicensed();
   if (denied) return denied;
   const { id } = await ctx.params;
