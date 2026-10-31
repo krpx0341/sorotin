@@ -52,6 +52,6 @@ Settings file: `data/settings.json` (gitignored via `/data`).
 
 `pnpm tauri:dev` opens a Tauri 2 window around this Next app. Linux installers live in `dist/` (`Sorotin-0.1.0-linux-x86_64.AppImage`): chmod +x, open, paste an `SRT-…` license key. ffmpeg / yt-dlp / Python are inside the AppImage.
 
-Windows NSIS and macOS DMG are built on GitHub Actions (public repo, free standard runners). Run **Actions → desktop → Run workflow**, or push a `v*` tag. Installers appear as workflow artifacts (14 days) and on the GitHub Release for tags. The Mac build is unsigned Apple Silicon. Gatekeeper will ask for Open Anyway. No API key is stored in CI. Paste your key in Settings after install.
+Windows NSIS and macOS DMG are built on GitHub Actions (public repo, free standard runners). Run **Actions → desktop → Run workflow**, or push a `v*` tag. Installers appear as workflow artifacts (14 days) and on the GitHub Release for tags. Mac has two unsigned builds: `sorotin-macos-arm64` (Apple Silicon) and `sorotin-macos-x64` (Intel). Pick the matching chip. Gatekeeper will ask for Open Anyway. No API key is stored in CI. Paste your key in Settings after install.
 
 License: Google Sheet + Apps Script (`license-appscript/`). Mint from the sheet menu; the app writes activate / last-seen into the same spreadsheet.
