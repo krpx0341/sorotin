@@ -1,0 +1,6 @@
+# Pins for the CI smoke tests of scripts/*.py.
+# OpenCV stays on 4.x: 5.x removed cv2.CascadeClassifier, which face_track.py calls.
+numpy==2.5.4
+opencv-python-headless==4.14.0.94
+pillow==11.3.0
+pytest==8.4.2
