@@ -1,0 +1,16 @@
+[Unit]
+Description=Sorotin license server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sorotin-license serve --data /var/lib/sorotin-license --bind 0.0.0.0:8787
+Restart=on-failure
+RestartSec=3
+MemoryMax=64M
+NoNewPrivileges=true
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

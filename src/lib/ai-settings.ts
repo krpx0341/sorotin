@@ -40,7 +40,9 @@ export function loadAiSettings(): AiSettings {
 export function saveAiSettings(partial: Partial<AiSettings>): AiSettings {
   const next = aiSettingsSchema.parse({ ...loadAiSettings(), ...partial });
   ensure();
-  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
+  const tmp = `${SETTINGS_PATH}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+  fs.renameSync(tmp, SETTINGS_PATH);
   return next;
 }
 

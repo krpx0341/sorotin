@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+data/settings.json
 
 # vercel
 .vercel
@@ -45,3 +47,21 @@ next-env.d.ts
 /.venv
 __pycache__/
 *.pyc
+
+# rust / tauri
+/target
+/license-server/target
+/src-tauri/target
+/src-tauri/gen
+/src-tauri/resources/server/**
+!/src-tauri/resources/server/.keep
+/src-tauri/resources/bin/**
+!/src-tauri/resources/bin/.keep
+/src-tauri/resources/python/
+/src-tauri/resources/fonts/**
+!/src-tauri/resources/fonts/.keep
+/src-tauri/resources/scripts/
+/src-tauri/resources/.cache/
+/dist
+*.sec
+license-server/data/

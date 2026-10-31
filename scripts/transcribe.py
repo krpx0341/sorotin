@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Transcribe wav/audio with faster-whisper. stdout = JSON segments.
+"""Transcribe wav/audio with faster-whisper. stdout = JSON segments (+ words).
 
 Loads audio via stdlib wave + numpy to avoid PyAV/ffmpeg ABI mismatches.
 Expects 16-bit PCM WAV (pipeline extracts with ffmpeg).
@@ -27,7 +27,6 @@ def load_wav_mono_f32(path: Path, target_sr: int = 16000) -> np.ndarray:
     if channels > 1:
         audio = audio.reshape(-1, channels).mean(axis=1)
     if rate != target_sr:
-        # Linear resample — good enough for speech ASR input.
         duration = audio.shape[0] / float(rate)
         new_len = int(duration * target_sr)
         if new_len <= 0:
@@ -38,10 +37,16 @@ def load_wav_mono_f32(path: Path, target_sr: int = 16000) -> np.ndarray:
     return audio
 
 
+STYLE_PROMPTS = {
+    "id": "Halo, apa kabar? Aku baik-baik aja. Jadi, ceritanya begini. Terus, kamu gimana?",
+    "en": "Hello, how are you? I'm doing well. So, here's the story. And then, what about you?",
+}
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("media")
-    p.add_argument("--model", default="base")
+    p.add_argument("--model", default="large-v3-turbo")
     p.add_argument("--language", default="id")
     p.add_argument("--device", default="cpu")
     args = p.parse_args()
@@ -59,16 +64,39 @@ def main() -> int:
         audio,
         language=None if args.language == "auto" else args.language,
         vad_filter=True,
+        word_timestamps=True,
+        # Long files: conditioning on previous text makes Whisper drift into an
+        # unpunctuated, 1-word-segment mode after a few minutes (seen on a 45-min
+        # podcast: punctuation dropped from ~50% to ~1% of segments). Independent
+        # windows + a punctuated style prompt keep full sentences.
+        condition_on_previous_text=False,
+        initial_prompt=STYLE_PROMPTS.get(args.language),
     )
-    segments = [
-        {
-            "start": float(s.start),
-            "end": float(s.end),
-            "text": s.text.strip(),
-        }
-        for s in segments_iter
-        if s.text and s.text.strip()
-    ]
+    segments = []
+    for s in segments_iter:
+        text = (s.text or "").strip()
+        if not text:
+            continue
+        words = []
+        for w in s.words or []:
+            token = (w.word or "").strip()
+            if not token:
+                continue
+            words.append(
+                {
+                    "start": float(w.start),
+                    "end": float(w.end),
+                    "word": token,
+                }
+            )
+        segments.append(
+            {
+                "start": float(s.start),
+                "end": float(s.end),
+                "text": text,
+                "words": words,
+            }
+        )
     print(
         json.dumps(
             {

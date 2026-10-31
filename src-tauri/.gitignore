@@ -1,0 +1,12 @@
+target
+gen
+resources/server/**
+!resources/server/.keep
+resources/bin/**
+!resources/bin/.keep
+resources/python/
+resources/fonts/**
+!resources/fonts/.keep
+resources/scripts/
+resources/.cache/
+WixTools

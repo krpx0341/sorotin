@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sorotin",
+  "version": "0.1.0",
+  "identifier": "id.redigma.sorotin",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "pnpm build && node scripts/prepare-tauri.mjs && node scripts/bundle-sidecars.mjs",
+    "frontendDist": "../desktop/splash"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sorotin",
+        "width": 1600,
+        "height": 960,
+        "minWidth": 900,
+        "minHeight": 600,
+        "maximized": true,
+        "center": true,
+        "decorations": false,
+        "backgroundColor": "#0A0F0D"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage", "deb", "nsis", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/server",
+      "resources/bin",
+      "resources/python",
+      "resources/fonts",
+      "resources/scripts"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": null
+    }
+  }
+}

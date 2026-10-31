@@ -1,8 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Sorotin palette: Ink #0A0F0D · Emerald #10B981 · Forest #047857 · Spot #FACC15 · Glow #FDE68A · Snow #F5F5F4 */
+  --background: #0a0f0d;
+  --foreground: #f5f5f4;
+  --brand-emerald: #10b981;
+  --brand-forest: #047857;
+  --brand-spot: #facc15;
+  --brand-glow: #fde68a;
+  --panel: #0d1311;
+  --panel-2: #131b18;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #34d399;
+  --accent-2: #60a5fa;
 }
 
 @theme inline {
@@ -10,17 +20,151 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-jakarta), var(--font-geist-sans);
+  --color-spot: var(--brand-spot);
+  --color-glow: var(--brand-glow);
+  --color-forest: var(--brand-forest);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--background);
+  height: 100%;
+}
+
+html[data-shell="desktop"],
+html[data-shell="desktop"] body {
+  height: 100%;
+  min-height: 100%;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1000px 500px at 0% -10%, rgba(16, 185, 129, 0.1), transparent 50%),
+    radial-gradient(900px 480px at 100% 0%, rgba(4, 120, 87, 0.08), transparent 45%),
+    var(--background);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  min-height: 100%;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(19, 27, 24, 0.92), rgba(13, 19, 16, 0.96));
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.8rem;
+  padding: 0.55rem 0.95rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #052e1c;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f4f4f5;
+  border: 1px solid var(--line);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-danger {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.2);
+}
+
+.input {
+  width: 100%;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+.input:focus {
+  border-color: rgba(52, 211, 153, 0.55);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.score-ring {
+  background: conic-gradient(var(--accent) calc(var(--p) * 1%), rgba(255, 255, 255, 0.08) 0);
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(19, 27, 24, 0.92), rgba(13, 19, 16, 0.96));
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+}
+.btn-ghost {
+  background: transparent;
+  color: #d4d4d8;
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+
+.hero-input {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.hero-input:focus-within {
+  border-color: rgba(52, 211, 153, 0.5);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12);
+}
+
+/* Brand headings: Plus Jakarta Sans (wordmark face), slightly tight tracking. */
+h1,
+h2 {
+  font-family: var(--font-jakarta), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.015em;
 }

@@ -1,0 +1,19 @@
+[package]
+name = "sorotin-license"
+version = "0.1.0"
+edition = "2021"
+description = "Tiny license server for Sorotin. Fits an Armbian STB (Artemis) or a NAS (Studio-Redigma)."
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["json", "tokio", "http1"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ed25519-dalek = { version = "2.1", features = ["std"] }
+getrandom = "0.2"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive", "env"] }
+hex = "0.4"
+base64 = "0.22"
+thiserror = "2"
