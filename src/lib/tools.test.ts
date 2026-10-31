@@ -1,3 +1,4 @@
+import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { captionFontDir, clipperPython, clipperScript, coverFont, pythonChildEnv } from "./tools";
 
@@ -25,7 +26,7 @@ describe("bundled tool paths", () => {
     expect(clipperPython()).toBe("/opt/sorotin/python");
     expect(captionFontDir()).toBe("/opt/sorotin/fonts");
     expect(coverFont()).toBe("/opt/sorotin/fonts/Cover.ttf");
-    expect(clipperScript("transcribe.py")).toBe("/opt/sorotin/scripts/transcribe.py");
+    expect(clipperScript("transcribe.py")).toBe(path.join("/opt/sorotin/scripts", "transcribe.py"));
     expect(pythonChildEnv()).toEqual({});
   });
 });

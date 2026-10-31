@@ -235,13 +235,16 @@ async function bundlePython() {
 }
 
 const FONT_URL =
-  "https://raw.githubusercontent.com/notofonts/latin-greek-cyrillic/main/fonts/NotoSans/full/ttf/NotoSans-Black.ttf";
+  "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Black.ttf";
 
 async function bundleFonts() {
   const dest = path.join(fonts, "NotoSans-Black.ttf");
   if (have(dest)) return console.log("skip font");
+  const vendored = path.join(root, "vendor", "fonts", "NotoSans-Black.ttf");
   const local = "/usr/share/fonts/noto/NotoSans-Black.ttf";
-  if (existsSync(local)) {
+  if (existsSync(vendored)) {
+    cpSync(vendored, dest);
+  } else if (existsSync(local)) {
     cpSync(local, dest);
   } else {
     await download(FONT_URL, dest);
