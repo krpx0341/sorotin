@@ -12,7 +12,7 @@ Pipeline: YouTube / TikTok / upload → download → transcribe → highlight wi
 cd ~/projects/personal-clipper
 pnpm install
 python3 -m venv ~/.hermes/cache/scratch/personal-clipper-venv
-~/.hermes/cache/scratch/personal-clipper-venv/bin/pip install faster-whisper "opencv-python-headless>=4.8,<5"
+~/.hermes/cache/scratch/personal-clipper-venv/bin/pip install faster-whisper "opencv-python-headless>=4.8,<6" pillow
 # optional override:
 # export PERSONAL_CLIPPER_PYTHON=~/.hermes/cache/scratch/personal-clipper-venv/bin/python
 pnpm dev
@@ -46,7 +46,7 @@ Settings file: `data/settings.json` (gitignored via `/data`).
 ## Render
 
 - Timed ASS captions with keyword highlights (not one static drawtext)
-- Face-aware 9:16 crop via `scripts/face_track.py` (OpenCV Haar; falls back to center)
+- Face-aware 9:16 crop via `scripts/face_track.py` (OpenCV YuNet on 4.x and 5.x; a failed run logs a warning and falls back to a center crop)
 - Hook title only in the first ~2.8s
 - Local + AI ranking with Hook / Flow / Value / Trend grades and complete-thought snaps
 

@@ -3,7 +3,11 @@
 
 One sequential decode pass over [start, end]:
   * every frame -> tiny 64x36 signature -> hard-cut detection (frame accurate)
-  * every --step seconds -> face detection (+ eyes, sharpness, content rect)
+  * every --step seconds -> YuNet face detection (+ landmarks, sharpness, content rect)
+
+Faces come from OpenCV's YuNet (`cv2.FaceDetectorYN`), which exists in OpenCV 4.5.4+
+and in OpenCV 5. Haar `CascadeClassifier` is not used: OpenCV 5 moved it out of the
+main package, and it missed large close-ups (headband, frame edge).
 
 Output (times are relative to --start):
   cx, cy, confidence, samples, face_w, face_h, faces, speaker_count   (back-compat, whole clip)
@@ -16,12 +20,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+except ImportError as e:
+    sys.stderr.write(
+        "face_track: cannot import OpenCV (cv2) or numpy "
+        f"({e}). Install with: pip install 'opencv-python-headless>=4.8,<6'\n"
+    )
+    raise SystemExit(1)
 
 CUT_DIFF = 12.0  # mean abs diff of 64x36 BGR signature that counts as a hard cut
 # Shots shorter than this merge into a neighbour. Crop changes only ever happen on a
@@ -36,22 +48,140 @@ SAME_ANGLE_DIFF = 14.0
 # (often a single frame of another camera). Trim it off; at most 0.2s of audio.
 EDGE_TRIM = 0.2
 
+# YuNet (opencv_zoo, Apache-2.0). ~230 KB, bundled next to this script.
+YUNET_FILENAME = "face_detection_yunet_2023mar.onnx"
+YUNET_SCORE = 0.6
+YUNET_NMS = 0.3
+YUNET_TOPK = 5000
+# Longest side passed to the network. Relative face size is unchanged by the scale.
+DETECT_MAX_SIDE = 1280
+
+
+def yunet_model_path() -> Path:
+    override = os.environ.get("SOROTIN_YUNET_MODEL") or os.environ.get("PERSONAL_CLIPPER_YUNET_MODEL")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / "models" / YUNET_FILENAME
+
+
+def face_detector_error(version: str, *, has_detector: bool, model: Path | None, detail: str = "") -> str:
+    """Actionable startup error. Haar is intentionally not the fallback."""
+    if not has_detector:
+        return (
+            f"OpenCV {version} has no cv2.FaceDetectorYN, so faces cannot be detected. "
+            "Install a build that includes the YuNet face detector: "
+            "pip install 'opencv-python-headless>=4.8,<6'. "
+            "OpenCV 4 and OpenCV 5 both work. "
+            "Haar CascadeClassifier is not used; OpenCV 5 moved it out of the main package."
+        )
+    if model is None or not model.is_file():
+        where = model if model is not None else yunet_model_path()
+        return (
+            f"YuNet face model not found at {where}. "
+            "Sorotin ships scripts/models/face_detection_yunet_2023mar.onnx "
+            "(Apache-2.0, https://github.com/opencv/opencv_zoo). "
+            "Restore that file or set SOROTIN_YUNET_MODEL to its path."
+        )
+    return (
+        f"OpenCV {version} could not load the YuNet detector ({detail}). "
+        "Reinstall with: pip install 'opencv-python-headless>=4.8,<6' (4.x or 5.x)."
+    )
+
+
+def _die(msg: str) -> None:
+    print(f"face_track: {msg}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def _quiet_opencv() -> None:
+    # OpenCV 5 prints a one-shot DNN graph warning on the default target. Detection
+    # still works; keep stderr for our own messages.
+    try:
+        cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+    except Exception:
+        pass
+
+
+class YuNet:
+    """cv2.FaceDetectorYN wrapper. Boxes are in the original frame's pixels."""
+
+    def __init__(self, model: str):
+        det = cv2.FaceDetectorYN.create(model, "", (320, 320), YUNET_SCORE, YUNET_NMS, YUNET_TOPK)
+        if det is None:
+            raise RuntimeError("FaceDetectorYN.create returned None")
+        self.det = det
+        self.size = (320, 320)
+
+    def detect(self, bgr: np.ndarray) -> list[tuple[int, int, int, int, float, int]]:
+        h, w = bgr.shape[:2]
+        scale = 1.0
+        work = bgr
+        long_side = max(h, w)
+        if long_side > DETECT_MAX_SIDE:
+            scale = DETECT_MAX_SIDE / float(long_side)
+            work = cv2.resize(
+                bgr,
+                (max(1, int(round(w * scale))), max(1, int(round(h * scale)))),
+                interpolation=cv2.INTER_AREA,
+            )
+        ww, hh = int(work.shape[1]), int(work.shape[0])
+        if (ww, hh) != self.size:
+            self.det.setInputSize((ww, hh))
+            self.size = (ww, hh)
+        _ret, faces = self.det.detect(work)
+        if faces is None or len(faces) == 0:
+            return []
+        inv = 1.0 / scale
+        out: list[tuple[int, int, int, int, float, int]] = []
+        for row in faces:
+            x = int(round(float(row[0]) * inv))
+            y = int(round(float(row[1]) * inv))
+            fw = int(round(float(row[2]) * inv))
+            fh = int(round(float(row[3]) * inv))
+            score = float(row[14])
+            x = max(0, min(x, w - 1))
+            y = max(0, min(y, h - 1))
+            fw = max(0, min(fw, w - x))
+            fh = max(0, min(fh, h - y))
+            if fw < 12 or fh < 12:
+                continue
+            eyes = 0
+            for i in (0, 1):
+                ex = float(row[4 + 2 * i]) * inv
+                ey = float(row[5 + 2 * i]) * inv
+                if x - 0.25 * fw <= ex <= x + 1.25 * fw and y - 0.3 * fh <= ey <= y + 0.8 * fh:
+                    eyes += 1
+            out.append((x, y, fw, fh, score, eyes))
+        out.sort(key=lambda b: b[4], reverse=True)
+        return out
+
+
+def load_yunet() -> YuNet:
+    """Fail before any frame is read when this OpenCV build cannot detect faces."""
+    _quiet_opencv()
+    version = getattr(cv2, "__version__", "unknown")
+    if not hasattr(cv2, "FaceDetectorYN"):
+        _die(face_detector_error(version, has_detector=False, model=None))
+    model = yunet_model_path()
+    if not model.is_file() or model.stat().st_size < 1000:
+        _die(face_detector_error(version, has_detector=True, model=model))
+    try:
+        return YuNet(str(model))
+    except Exception as e:
+        _die(face_detector_error(version, has_detector=True, model=model, detail=f"{type(e).__name__}: {e}"))
+    raise AssertionError("unreachable")
+
 
 # ---------------------------------------------------------------- detection
 
-def detect_faces(gray: np.ndarray, cascades: list) -> list[tuple[int, int, int, int]]:
-    h, w = gray.shape[:2]
-    scale = 1.0
-    work = gray
-    if max(h, w) > 720:
-        scale = 720.0 / max(h, w)
-        work = cv2.resize(gray, (int(w * scale), int(h * scale)))
-    found: list[tuple[int, int, int, int]] = []
-    for cascade in cascades:
-        faces = cascade.detectMultiScale(work, scaleFactor=1.12, minNeighbors=4, minSize=(40, 40))
-        for x, y, fw, fh in faces:
-            found.append((int(x / scale), int(y / scale), int(fw / scale), int(fh / scale)))
-    return found
+def _iou_px(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    ix = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+    iy = max(0, min(ay + ah, by + bh) - max(ay, by))
+    inter = ix * iy
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
 
 
 def content_rect(frame: np.ndarray) -> tuple[float, float, float, float] | None:
@@ -90,7 +220,7 @@ def skin_fraction(bgr_roi: np.ndarray) -> float:
     return float(mask.mean())
 
 
-MIN_SKIN = 0.5  # Haar fires on toys/posters/plants (seen: figurine 0.36); real faces measure 0.8–1.0
+MIN_SKIN = 0.5  # posters/figurines sit under this; real faces measure ~0.8–1.0
 
 
 @dataclass
@@ -103,39 +233,43 @@ class Sample:
     sig: np.ndarray | None = None  # 64x36 BGR signature (same-angle matching)
 
 
-def analyze(frame: np.ndarray, t: float, cascades: list, eye_cascade) -> Sample:
+def _same_face(a: tuple[int, int, int, int], b: tuple[int, int, int, int], w: int, h: int) -> bool:
+    """YuNet sometimes emits a second, shifted box on the same head (headband, close-up)."""
+    if _iou_px(a, b) > 0.2:
+        return True
+    acx, acy = (a[0] + a[2] / 2) / w, (a[1] + a[3] / 2) / h
+    bcx, bcy = (b[0] + b[2] / 2) / w, (b[1] + b[3] / 2) / h
+    return abs(acx - bcx) < 0.12 and abs(acy - bcy) < 0.22
+
+
+def analyze(frame: np.ndarray, t: float, detector: YuNet | None) -> Sample:
     h, w = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    eq = cv2.equalizeHist(gray)
-    raw = detect_faces(eq, cascades) if cascades else []
+    raw = detector.detect(frame) if detector is not None else []
     boxes: list[tuple[float, float, float, float]] = []
     px: list[tuple[int, int, int, int]] = []
-    for x, y, fw, fh in raw:
+    eyes: list[int] = []
+    # Highest score first (YuNet.detect already sorts). A later duplicate is dropped.
+    for x, y, fw, fh, score, eye_n in raw:
         # central 60% of the box (skips hair/background at the edges)
         roi = frame[y + int(fh * 0.2): y + int(fh * 0.8), x + int(fw * 0.2): x + int(fw * 0.8)]
-        if skin_fraction(roi) < MIN_SKIN:
+        # A very confident box can sit a bit under the poster threshold (headband,
+        # strong colour cast) and still be a face. Low scores still need real skin.
+        need = 0.28 if score >= 0.85 else MIN_SKIN
+        if skin_fraction(roi) < need:
+            continue
+        box = (x, y, fw, fh)
+        if any(_same_face(box, prev, w, h) for prev in px):
             continue
         cx = (x + fw / 2.0) / w
         cy = (y + fh * 0.42) / h
-        nfw, nfh = fw / w, fh / h
-        dup = next((i for i, b in enumerate(boxes) if abs(cx - b[0]) < 0.08 and abs(cy - b[1]) < 0.08), None)
-        if dup is None:
-            boxes.append((cx, cy, nfw, nfh))
-            px.append((x, y, fw, fh))
-        elif nfw * nfh > boxes[dup][2] * boxes[dup][3]:
-            boxes[dup] = (cx, cy, nfw, nfh)
-            px[dup] = (x, y, fw, fh)
-    eyes: list[int] = []
+        boxes.append((cx, cy, fw / w, fh / h))
+        px.append(box)
+        eyes.append(min(2, eye_n))
     sharp_rois = []
     for x, y, fw, fh in px:
         roi = gray[max(0, y): y + fh, max(0, x): x + fw]
         sharp_rois.append(roi)
-        upper = roi[: max(1, int(roi.shape[0] * 0.6))]
-        n = 0
-        if eye_cascade is not None and upper.size:
-            ms = max(8, int(fw * 0.12))
-            n = len(eye_cascade.detectMultiScale(upper, scaleFactor=1.1, minNeighbors=5, minSize=(ms, ms)))
-        eyes.append(min(2, n))
     if sharp_rois:
         sharp = float(np.mean([cv2.Laplacian(r, cv2.CV_64F).var() for r in sharp_rois if r.size]))
     else:
@@ -265,12 +399,35 @@ def _even(v: float) -> int:
     return int(round(v / 2.0)) * 2
 
 
+def _clamp_origin(v: float, size: float, lo: float, hi: float, full: float) -> float:
+    if size <= hi - lo:
+        v = min(max(v, lo), hi - size)
+    return min(max(v, 0.0), full - size)
+
+
+def _clamped_crop(x: float, y: float, cw: float, ch: float, bx0: float, by0: float, bx1: float, by1: float,
+                  W: int, H: int) -> dict:
+    """Previous behaviour: slide the window inside the frame. Integers match the Haar crops."""
+    x = _clamp_origin(x, cw, bx0, bx1, W)
+    y = _clamp_origin(y, ch, by0, by1, H)
+    cw_i, ch_i = min(_even(cw), W - W % 2), min(_even(ch), H - H % 2)
+    x_i = max(0, min(_even(x), W - cw_i))
+    y_i = max(0, min(_even(y), H - ch_i))
+    return {"x": x_i, "y": y_i, "w": cw_i, "h": ch_i}
+
+
 def pane_crop(face: dict | None, W: int, H: int, aspect: float, target_frac: float,
               min_h_frac: float, headroom: float, rect) -> dict:
     """Crop rect (source px) with output aspect `aspect` (w/h).
 
     Zoom so the face is ~target_frac of crop height (never tighter than min_h_frac*H),
     shrink to the content inset when it sits on a solid background, then clamp.
+
+    When the window is narrower than the frame and the face sits on the edge, clamping
+    shoves the face off-centre. In that case x/y/w/h stay the in-frame slice and
+    place_* says where that slice sits in the output pane (the rest is a blurred fill).
+    A full-bleed axis (the usual 9:16 crop is as tall as a 16:9 source) is still clamped,
+    so centred shots keep the same crop integers as before.
     """
     max_h = min(H, W / aspect)
     min_h = min(max_h, min_h_frac * H)
@@ -288,17 +445,65 @@ def pane_crop(face: dict | None, W: int, H: int, aspect: float, target_frac: flo
         x = face["cx"] * W - cw / 2.0
         y = face["cy"] * H - ch * headroom
 
-    def clamp(v, size, lo, hi, full):
-        if size <= hi - lo:
-            v = min(max(v, lo), hi - size)
-        return min(max(v, 0.0), full - size)
+    span_w, span_h = bx1 - bx0, by1 - by0
+    overhang_x = max(0.0, bx0 - x) + max(0.0, x + cw - bx1)
+    overhang_y = max(0.0, by0 - y) + max(0.0, y + ch - by1)
+    pad_x = cw < span_w - 1 and overhang_x >= 8
+    pad_y = ch < span_h - 1 and overhang_y >= 8
+    # Insets stay clamped inside the content rect. Blur-fill is only for a face
+    # hanging off the real frame edge (the 9:16 window can't slide any further).
+    if rect is not None or not (pad_x or pad_y):
+        return _clamped_crop(x, y, cw, ch, bx0, by0, bx1, by1, W, H)
 
-    x = clamp(x, cw, bx0, bx1, W)
-    y = clamp(y, ch, by0, by1, H)
-    cw_i, ch_i = min(_even(cw), W - W % 2), min(_even(ch), H - H % 2)
-    x_i = max(0, min(_even(x), W - cw_i))
-    y_i = max(0, min(_even(y), H - ch_i))
-    return {"x": x_i, "y": y_i, "w": cw_i, "h": ch_i}
+    ideal_x, ideal_y = x, y
+    if not pad_x:
+        ideal_x = _clamp_origin(x, cw, bx0, bx1, W)
+    if not pad_y:
+        ideal_y = _clamp_origin(y, ch, by0, by1, H)
+    vis_x0 = 0.0 if not pad_x else min(max(ideal_x, 0.0), float(W))
+    vis_y0 = 0.0 if not pad_y else min(max(ideal_y, 0.0), float(H))
+    vis_x1 = float(W) if not pad_x else min(max(ideal_x + cw, 0.0), float(W))
+    vis_y1 = float(H) if not pad_y else min(max(ideal_y + ch, 0.0), float(H))
+    if not pad_x:
+        vis_x0, vis_x1 = ideal_x, ideal_x + cw
+    if not pad_y:
+        vis_y0, vis_y1 = ideal_y, ideal_y + ch
+    x_i = max(0, min(_even(vis_x0), max(0, W - 2)))
+    y_i = max(0, min(_even(vis_y0), max(0, H - 2)))
+    w_i = _even(max(0.0, vis_x1 - vis_x0))
+    h_i = _even(max(0.0, vis_y1 - vis_y0))
+    if x_i + w_i > W:
+        w_i = _even(max(0, W - x_i))
+    if y_i + h_i > H:
+        h_i = _even(max(0, H - y_i))
+    w_i = max(0, min(w_i, W - x_i))
+    h_i = max(0, min(h_i, H - y_i))
+    w_i -= w_i % 2
+    h_i -= h_i % 2
+    if w_i < 16 or h_i < 16:
+        return _clamped_crop(x, y, cw, ch, bx0, by0, bx1, by1, W, H)
+
+    if pad_x:
+        place_x = (x_i - ideal_x) / cw
+        place_w = w_i / cw
+    else:
+        place_x, place_w = 0.0, 1.0
+    if pad_y:
+        place_y = (y_i - ideal_y) / ch
+        place_h = h_i / ch
+    else:
+        place_y, place_h = 0.0, 1.0
+    place_x = min(1.0, max(0.0, place_x))
+    place_y = min(1.0, max(0.0, place_y))
+    place_w = min(1.0, max(0.05, place_w))
+    place_h = min(1.0, max(0.05, place_h))
+    crop = {"x": x_i, "y": y_i, "w": int(w_i), "h": int(h_i)}
+    if place_w < 0.985 or place_h < 0.985 or place_x > 0.015 or place_y > 0.015:
+        crop["place_x"] = round(place_x, 4)
+        crop["place_y"] = round(place_y, 4)
+        crop["place_w"] = round(place_w, 4)
+        crop["place_h"] = round(place_h, 4)
+    return crop
 
 
 def median_rect(samples: list[Sample]):
@@ -309,10 +514,18 @@ def median_rect(samples: list[Sample]):
     return tuple(float(v) for v in np.median(a, axis=0))
 
 
+def _map_span(src0: float, src1: float, origin: float, size: float, p0: float, psize: float) -> tuple[float, float]:
+    """Map a source span through a visible crop onto the output pane (place_*)."""
+    if size <= 0:
+        return p0, p0
+    return p0 + (src0 - origin) / size * psize, p0 + (src1 - origin) / size * psize
+
+
 def face_boxes_out(faces: list[dict], crops: list[dict], W: int, H: int, dual: bool) -> list[dict]:
     """Face boxes in *output* frame coords (0..1), after crop/scale (+ vstack for dual).
 
-    Haar boxes cover brow→chin, so the box is grown upward for hair/caps.
+    Detector boxes cover brow→chin, so the box is grown upward for hair/caps.
+    place_* (set when the crop is padded) puts that slice inside the pane.
     """
     out = []
     for i, (f, c) in enumerate(zip(faces, crops)):
@@ -321,8 +534,12 @@ def face_boxes_out(faces: list[dict], crops: list[dict], W: int, H: int, dual: b
         y0 = f["cy"] * H - 0.42 * fh - 0.35 * fh
         x1 = x0 + fw
         y1 = f["cy"] * H + 0.58 * fh + 0.10 * fh
-        nx0, nx1 = (x0 - c["x"]) / c["w"], (x1 - c["x"]) / c["w"]
-        ny0, ny1 = (y0 - c["y"]) / c["h"], (y1 - c["y"]) / c["h"]
+        px0 = float(c.get("place_x", 0.0))
+        py0 = float(c.get("place_y", 0.0))
+        pw = float(c.get("place_w", 1.0))
+        ph = float(c.get("place_h", 1.0))
+        nx0, nx1 = _map_span(x0, x1, c["x"], c["w"], px0, pw)
+        ny0, ny1 = _map_span(y0, y1, c["y"], c["h"], py0, ph)
         nx0, nx1 = max(0.0, nx0), min(1.0, nx1)
         ny0, ny1 = max(0.0, ny0), min(1.0, ny1)
         if nx1 <= nx0 or ny1 <= ny0:
@@ -330,8 +547,7 @@ def face_boxes_out(faces: list[dict], crops: list[dict], W: int, H: int, dual: b
         if dual:
             ny0, ny1 = (i + ny0) / 2.0, (i + ny1) / 2.0
         # core = brow→chin (no hair/cap growth): captions must never touch this
-        cy0 = (f["cy"] * H - 0.42 * fh - c["y"]) / c["h"]
-        cy1 = (f["cy"] * H + 0.58 * fh - c["y"]) / c["h"]
+        cy0, cy1 = _map_span(f["cy"] * H - 0.42 * fh, f["cy"] * H + 0.58 * fh, c["y"], c["h"], py0, ph)
         cy0, cy1 = max(0.0, cy0), min(1.0, cy1)
         if dual:
             cy0, cy1 = (i + cy0) / 2.0, (i + cy1) / 2.0
@@ -455,6 +671,8 @@ def main() -> int:
     p.add_argument("--out-h", type=int, default=1920)
     p.add_argument("--allow-dual", action="store_true")
     args = p.parse_args()
+    # OpenCV version + detector, before the file check, so a bad install is not an AttributeError.
+    detector = load_yunet()
 
     media = Path(args.media)
     if not media.exists():
@@ -472,13 +690,6 @@ def main() -> int:
     end = args.end if args.end > start else total
     end = min(end, total) if total > 0 else end
     duration = max(0.0, end - start)
-
-    base = cv2.data.haarcascades
-    cascades = [c for c in (cv2.CascadeClassifier(base + n) for n in (
-        "haarcascade_frontalface_alt2.xml", "haarcascade_profileface.xml")) if not c.empty()]
-    eye_cascade = cv2.CascadeClassifier(base + "haarcascade_eye_tree_eyeglasses.xml")
-    if eye_cascade.empty():
-        eye_cascade = None
 
     # Single sequential pass (seeking per sample is very slow on AV1/VP9).
     cap.set(cv2.CAP_PROP_POS_MSEC, start * 1000.0)
@@ -507,7 +718,7 @@ def main() -> int:
             cuts.append(max(0.0, t))
             next_t = min(next_t, t)  # sample the first frame of every new shot
         if t + 1e-6 >= next_t:
-            samples.append(analyze(frame, max(0.0, t), cascades, eye_cascade))
+            samples.append(analyze(frame, max(0.0, t), detector))
             next_t = max(next_t + args.step, t + args.step * 0.5)
     cap.release()
 
@@ -599,8 +810,10 @@ def main() -> int:
     print(json.dumps({
         "cx": primary["cx"], "cy": primary["cy"],
         "confidence": min(1.0, with_face / expected), "samples": with_face,
+        "sample_count": len(samples),
         "face_w": primary["face_w"], "face_h": primary["face_h"],
         "faces": faces, "speaker_count": speaker_count,
+        "detector": "yunet", "opencv": cv2.__version__,
         "width": W, "height": H, "duration": round(duration, 3),
         "trim_start": round(trim_start, 3), "trim_end": round(trim_end, 3),
         "cuts": [round(c, 3) for c in cuts],

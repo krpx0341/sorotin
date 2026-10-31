@@ -426,14 +426,15 @@ type FaceCropResult = FacePoint & {
 /** How long the hook card stays on screen (fades out at the end). */
 const HOOK_SECONDS = Number(process.env.PERSONAL_CLIPPER_HOOK_SEC || 3.5);
 
-async function faceCropCenter(
-  mediaPath: string,
-  start: number,
-  end: number,
-  out: { w: number; h: number; allowDual: boolean },
-): Promise<FaceCropResult> {
-  const script = clipperScript("face_track.py");
-  const fallback: FaceCropResult = {
+/** One-line warning. The Python stderr (install hint, missing model) is appended. */
+export function faceTrackFailureWarning(detail: string): string {
+  const oneLine = detail.replace(/\s+/g, " ").trim().slice(0, 600);
+  return `face_track gagal, render dilanjutkan dengan crop tengah. ${oneLine}`;
+}
+
+/** Center crop used when face_track exits non-zero or returns nothing usable. */
+export function centerFaceFallback(): FaceCropResult {
+  return {
     cx: 0.5,
     cy: 0.38,
     confidence: 0,
@@ -444,6 +445,26 @@ async function faceCropCenter(
     segments: [],
     cover: null,
   };
+}
+
+/**
+ * face_track failed. A stopped job must still abort the render; every other failure
+ * logs a warning and returns a center crop (empty segments → renderClip's center path).
+ */
+export function settleFaceTrackError(e: unknown): FaceCropResult {
+  if (e instanceof JobAbortedError) throw e;
+  const detail = e instanceof Error ? e.message : String(e);
+  console.warn(`[face] ${faceTrackFailureWarning(detail)}`);
+  return centerFaceFallback();
+}
+
+export async function faceCropCenter(
+  mediaPath: string,
+  start: number,
+  end: number,
+  out: { w: number; h: number; allowDual: boolean },
+): Promise<FaceCropResult> {
+  const script = clipperScript("face_track.py");
   try {
     const { stdout } = await run(clipperPython(), [
       script,
@@ -514,8 +535,8 @@ async function faceCropCenter(
             }
           : null,
     };
-  } catch {
-    return fallback;
+  } catch (e) {
+    return settleFaceTrackError(e);
   }
 }
 
@@ -683,6 +704,7 @@ async function renderClip(
   if (segments.length) {
     fc = buildReframeGraph(segments, w, h);
   } else {
+    // No shot plan (face_track failed, or it returned no segments): center crop.
     const vfParts: string[] = [];
     if (skills.autoReframe && face) {
       const { x, y } = faceCropXY(w, h, face.cx, face.cy, 0.3);

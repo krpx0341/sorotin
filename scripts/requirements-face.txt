@@ -1,0 +1,5 @@
+# Face tracking only (scripts/face_track.py). OpenCV 4.8+ and 5.x both work.
+# YuNet needs cv2.FaceDetectorYN, which ships in opencv-python-headless 4.5.4+.
+# Haar CascadeClassifier was removed from the OpenCV 5 main package; do not pin <5.
+opencv-python-headless>=4.8,<6
+numpy>=1.26
