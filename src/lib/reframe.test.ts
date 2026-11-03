@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAssCaptions, captionBandHeight, splitByPlacement } from "./captions";
+import { captionInkTop } from "./hook-place";
 import {
   buildReframeGraph,
   captionPlacements,
@@ -160,5 +161,51 @@ describe("pickHookTop", () => {
   });
   it("defaults to the top without face data", () => {
     expect(pickHookTop([], { cardH: 0.12, cardW: 0.88, hookSec: 3.5 })).toBe(0.085);
+  });
+
+  const face = (coreY0: number, coreY1: number, y0 = coreY0 - 0.04, y1 = coreY1 + 0.04) =>
+    ({
+      start: 0,
+      end: 10,
+      layout: "single" as const,
+      crops: [] as import("./reframe").CropRect[],
+      faceBoxes: [{ x0: 0.15, x1: 0.85, y0, y1, coreY0, coreY1 }],
+    });
+
+  it("sits above a 1-line caption and lower than a 2-line caption", () => {
+    const opts = { cardH: 0.12, cardW: 0.88, hookSec: 3.5 };
+    const one = captionInkTop(1920, 1);
+    const two = captionInkTop(1920, 2);
+    expect(two).toBeLessThan(one);
+    const top1 = pickHookTop([face(0.1, 0.4)], { ...opts, captionTop: one });
+    const top2 = pickHookTop([face(0.1, 0.4)], { ...opts, captionTop: two });
+    expect(top1 + opts.cardH).toBeLessThanOrEqual(one + 1e-6);
+    expect(top2 + opts.cardH).toBeLessThanOrEqual(two + 1e-6);
+    expect(top2 + opts.cardH).toBeGreaterThan(0.63);
+    expect(top1).toBeGreaterThan(top2);
+    expect(top1).toBeGreaterThanOrEqual(0.4 - 1e-6);
+    expect(top2).toBeGreaterThanOrEqual(0.4 - 1e-6);
+  });
+
+  it("big close-up: card misses the face core and the 2-line caption", () => {
+    const cardH = 0.15;
+    const captionTop = captionInkTop(1920, 2);
+    const coreY0 = 0.0982;
+    const coreY1 = 0.4954;
+    const top = pickHookTop(
+      [
+        {
+          start: 0,
+          end: 42,
+          layout: "single",
+          crops: [],
+          faceBoxes: [{ x0: 0.1472, y0: 0, x1: 0.8528, y1: 0.5351, coreY0, coreY1 }],
+        },
+      ],
+      { cardH, cardW: 0.88, hookSec: 3.5, captionTop },
+    );
+    expect(top).toBeGreaterThanOrEqual(coreY1 - 1e-4);
+    expect(top + cardH).toBeLessThanOrEqual(captionTop + 1e-6);
+    expect(top).toBeGreaterThan(coreY0);
   });
 });

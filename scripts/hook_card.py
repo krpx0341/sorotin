@@ -39,6 +39,18 @@ def wrap_k(words, font, k):
     return best
 
 
+def card_outer_h(font, size, n_lines, accent):
+    """PNG height including the shadow, matching the draw path below."""
+    ascent, descent = font.getmetrics()
+    line_h = int((ascent + descent) * 1.0)
+    gap = int(size * 0.08)
+    pad_y = int(size * 0.42)
+    accent_h = max(6, int(size * 0.11)) if accent else 0
+    card_h = int(pad_y * 2 + line_h * n_lines + gap * max(0, n_lines - 1) + accent_h)
+    shadow = int(size * 0.18)
+    return card_h + shadow * 2
+
+
 def best_wrap(words, font, max_lines, limit=None):
     """Fewest lines that fit `limit`; otherwise the narrowest arrangement."""
     fallback = None
@@ -61,6 +73,7 @@ def main():
     ap.add_argument("--style", default="classic")
     ap.add_argument("--max-frac", type=float, default=0.88)
     ap.add_argument("--max-lines", type=int, default=3)
+    ap.add_argument("--max-height", type=int, default=0, help="shrink until the PNG is at most this tall")
     a = ap.parse_args()
 
     W, H = a.frame_w, a.frame_h
@@ -70,6 +83,13 @@ def main():
     max_w = W * a.max_frac
     top_size = int(base * 0.066)  # 1080 wide -> ~71px
     min_size = int(base * 0.036)
+    def fits_box(font, size, lines, widest):
+        if widest + 2 * int(size * 0.62) > max_w:
+            return False
+        if a.max_height and card_outer_h(font, size, len(lines), accent) > a.max_height:
+            return False
+        return True
+
     chosen = None
     # Pass 1: big and compact (<=2 lines). Pass 2: allow 3 lines, keep shrinking.
     for lines_allowed, floor in ((2, int(base * 0.052)), (a.max_lines, min_size)):
@@ -78,7 +98,7 @@ def main():
             font = ImageFont.truetype(a.font, size)
             pad_x = int(size * 0.62)
             lines, widest = best_wrap(words, font, lines_allowed, max_w - 2 * pad_x)
-            if widest + 2 * pad_x <= max_w:
+            if fits_box(font, size, lines, widest):
                 chosen = (font, size, pad_x, lines, widest)
             size -= 2
         if chosen:
@@ -87,8 +107,8 @@ def main():
         font = ImageFont.truetype(a.font, min_size)
         pad_x = int(min_size * 0.62)
         lines, widest = best_wrap(words, font, a.max_lines)
-        # last resort: shrink exactly to fit
-        while widest + 2 * pad_x > max_w and min_size > 18:
+        # last resort: shrink exactly to fit width and, when asked, height
+        while min_size > 18 and not fits_box(font, min_size, lines, widest):
             min_size -= 2
             font = ImageFont.truetype(a.font, min_size)
             pad_x = int(min_size * 0.62)

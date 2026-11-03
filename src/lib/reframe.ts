@@ -1,3 +1,5 @@
+import { placeHookCard } from "./hook-place";
+
 /** Scene-aware reframing plan (from scripts/face_track.py) → ffmpeg filtergraphs. */
 
 export type CropRect = { x: number; y: number; w: number; h: number };
@@ -192,11 +194,15 @@ export function captionPlacements(
 /**
  * Where to put the hook card (top, normalized) during the first seconds: as high as possible
  * (below platform UI) but never over a face; drops below the faces if the top is occupied.
+ * Pass `captionTop` (from captionInkTop) so the card also stays above the real caption ink.
  */
 export function pickHookTop(
   segments: ReframeSegment[],
-  opts: { cardH: number; cardW: number; hookSec: number; preferTop?: number },
+  opts: { cardH: number; cardW: number; hookSec: number; preferTop?: number; captionTop?: number },
 ): number {
+  if (opts.captionTop != null) {
+    return placeHookCard(segments, { ...opts, captionTop: opts.captionTop }).top;
+  }
   const preferTop = opts.preferTop ?? 0.085;
   const inWindow = segments.filter((s) => s.start < opts.hookSec);
   const faces = inWindow.flatMap((s) => s.faceBoxes || []);

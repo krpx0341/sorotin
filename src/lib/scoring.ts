@@ -10,6 +10,7 @@
  * not counts, with explicit reasons. Local results are labelled "estimasi lokal";
  * AI results come from the model with its own reasons.
  */
+import { fitHookText } from "./hook-text";
 import type { ClipScoring, TranscriptSegment, ViralityGrades } from "./types";
 
 const norm = (t: string) => t.replace(/\s+/g, " ").trim();
@@ -177,12 +178,35 @@ export function sanitizeHook(raw: string | undefined): string {
 }
 
 /**
- * Punchy on-screen hook without an LLM: the most hook-like whole sentence/clause from the
- * clip title or its first seconds, 3–8 words, never cut mid-word.
+ * On-screen hook without an LLM. Prefers a punchy line, but keeps the opening
+ * clause when the short line was cut on a dangling connector — the card wraps it.
+ * Ellipsis only if the line cannot fit the card at the minimum font.
  */
 export function localHookLine(title: string, segments: TranscriptSegment[], start: number, end: number): string {
   const best = pickLine(title, segments, start, end, HOOK_MAX_WORDS, false);
-  return finish(capWords(best || cleanPhrase(title) || "Simak sampai habis"));
+  let phrase = finish(best || cleanPhrase(title) || "Simak sampai habis");
+  const first = segments.find((s) => s.end > start + 0.2 && s.start < start + 8);
+  const opening = finish(cleanPhrase(first?.text || ""));
+  const fits = (c: string) => !!c && fitHookText(c) === c;
+  const stem = phrase.replace(/[?.!…]+$/g, "");
+  const dangling = CONNECTOR_END.test(stem) || /…$/.test(phrase);
+  if (opening && fits(opening) && (!fits(phrase) || (dangling && opening.toLowerCase().startsWith(stem.toLowerCase())))) {
+    phrase = opening;
+  }
+  return fits(phrase) ? phrase : fitHookText(phrase);
+}
+
+/** Text burned onto the hook card. Rebuilds a stored ellipsis from the transcript. */
+export function onScreenHook(
+  clip: { hook?: string; title: string; start: number; end: number },
+  segments: TranscriptSegment[],
+  frameW = 1080,
+  frameH = 1920,
+): string {
+  const stored = (clip.hook || "").trim();
+  const fresh = localHookLine(clip.title, segments, clip.start, clip.end);
+  const raw = !stored || /…$/.test(stored) || /\.\.\.$/.test(stored) ? fresh : stored;
+  return fitHookText(raw, frameW, frameH);
 }
 
 export const TITLE_MAX_WORDS = 12;

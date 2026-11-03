@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { combineParts, localHookLine, localScoring, localTitle, sanitizeHook, sanitizeTitle } from "./scoring";
+import { fitHookText } from "./hook-text";
+import { combineParts, localHookLine, localScoring, localTitle, onScreenHook, sanitizeHook, sanitizeTitle } from "./scoring";
 import type { TranscriptSegment } from "./types";
 
 const seg = (start: number, end: number, text: string): TranscriptSegment => ({ start, end, text });
@@ -37,9 +38,32 @@ describe("hook line", () => {
       seg(4.2, 8, "Kamu takut nggak sih kalau ketemu mantan lagi?"),
     ];
     const h = localHookLine("yang mana diduganya memantannya ini", segs, 0, 30);
-    expect(h.split(" ").length).toBeLessThanOrEqual(9);
     expect(h).toMatch(/^[A-Z]/);
     expect(h).toMatch(/mantan/i);
+    expect(h).not.toMatch(/…$/);
+  });
+
+  it("wraps the clip2 hook instead of cutting it with an ellipsis", () => {
+    const full = "When I was at the FCC I wrote this paper called the digital handshake that really talked about";
+    expect(fitHookText(full, 1080, 1920)).toBe(full);
+    const segs = [
+      seg(82.48, 88.5, "when I was at the FCC I wrote this paper called the digital handshake that really talked about"),
+      seg(88.5, 96.42, "how this interconnection could work and self-regulate on the internet"),
+    ];
+    const h = onScreenHook(
+      {
+        hook: "When I was at the FCC I wrote…",
+        title: "When I was at the FCC I wrote this paper called the",
+        start: 82.48,
+        end: 122.99,
+      },
+      segs,
+      1080,
+      1920,
+    );
+    expect(h).not.toMatch(/…|\.\.\./);
+    expect(h.toLowerCase()).toContain("digital handshake");
+    expect(h.toLowerCase()).not.toContain("interconnection");
   });
 
   it("sanitizes AI hooks", () => {
