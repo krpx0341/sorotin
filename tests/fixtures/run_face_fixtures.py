@@ -2,11 +2,9 @@
 """Run scripts/face_track.py on the face fixtures and print a pass/fail table.
 
 Videos are not in the repo. Point FIXTURE_DIR at a directory of rebuilt mp4s
-(see manifest.json for the Wikimedia source and the ffmpeg command). ours.mp4
-is optional and local-only: set OURS_MP4. Do not commit that file or frames from it.
+(see manifest.json for the Wikimedia source and the ffmpeg command).
 
-    FIXTURE_DIR=/tmp/face-fixtures OURS_MP4=/path/ours.mp4 \\
-      python3 fixtures/face/run_face_fixtures.py --crops /tmp/face-crops
+    FIXTURE_DIR=/path/to/mp4s python3 tests/fixtures/run_face_fixtures.py --crops /tmp/face-crops
 """
 from __future__ import annotations
 
@@ -199,7 +197,10 @@ def main() -> int:
             failed += 1
             continue
         digest = sha256(video)
-        known = {fx.get("sha256"), fx.get("sha256_qa"), fx.get("sha256_rebuild_ffmpeg_6_1_1")}
+        known = {fx.get("sha256")}
+        by_ffmpeg = fx.get("sha256_by_ffmpeg") or {}
+        if isinstance(by_ffmpeg, dict):
+            known.update(by_ffmpeg.values())
         known.discard(None)
         hash_note = "sha256 ok" if digest in known else f"sha256 {digest[:12]} differs from manifest; continuing"
         exp = fx.get("expected") or {}

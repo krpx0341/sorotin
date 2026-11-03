@@ -255,13 +255,26 @@ async function bundleFonts() {
   console.log("font", dest);
 }
 
+function includeBundledScript(src) {
+  const scriptsRoot = path.join(root, "scripts");
+  const rel = path.relative(scriptsRoot, src);
+  if (rel === "") return true;
+  const parts = rel.split(path.sep);
+  // tests/ lives at the repo root and is not copied. Also skip a tests/ tree
+  // if one is ever placed under scripts/, plus test modules and caches.
+  if (parts.includes("tests") || parts.includes("__pycache__")) return false;
+  const base = path.basename(src);
+  if (base.endsWith(".mjs") || base.includes("bundle-sidecars")) return false;
+  if (base.startsWith("test_") || base.endsWith(".pyc")) return false;
+  return true;
+}
+
 function bundleScripts() {
   const dest = path.join(res, "scripts");
   rmSync(dest, { recursive: true, force: true });
   cpSync(path.join(root, "scripts"), dest, {
     recursive: true,
-    filter: (p) =>
-      !p.endsWith(".mjs") && !p.includes("bundle-sidecars") && !path.basename(p).startsWith("test_"),
+    filter: includeBundledScript,
   });
   console.log("scripts", dest);
 }
@@ -283,6 +296,15 @@ function verify() {
 }
 
 const steps = [bundleNode, bundleFfmpeg, bundleYtDlp, bundlePython, bundleFonts, bundleScripts, verify];
+if (process.argv.includes("--scripts-filter-check")) {
+  const dest = process.argv[process.argv.indexOf("--scripts-filter-check") + 1];
+  if (!dest) throw new Error("--scripts-filter-check needs a destination directory");
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  cpSync(path.join(root, "scripts"), dest, { recursive: true, filter: includeBundledScript });
+  console.log("scripts filter check", dest);
+  process.exit(0);
+}
 for (const step of steps) {
   await step();
 }

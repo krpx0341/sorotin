@@ -191,7 +191,7 @@ UI copy is Indonesian.
 
 - `pnpm typecheck` ✔
 - `pnpm lint` ✔ 0 problems
-- `pnpm test` ✔ vitest (`*.test.ts` in `src/lib/`, including the face_track failure fallback). `pnpm typecheck` runs `next typegen` first so `LayoutProps` exists. Python: `python -m unittest discover -s scripts -p 'test_*.py'` on OpenCV 4 and 5.
+- `pnpm test` ✔ vitest (`*.test.ts` in `src/lib/`, including the face_track failure fallback). `pnpm typecheck` runs `next typegen` first so `LayoutProps` exists. Python: `python -m pytest tests/smoke` on OpenCV 4 (from `scripts/requirements-lock.txt`) and OpenCV 5.
 - `scripts/*.py` have no automated tests. Verify visually by extracting frames, e.g.
   `ffmpeg -i data/studios/<id>/clips/<clip>/9x16.mp4 -vf "select=lt(n\,3),tile=3x1" -frames:v 1 out.jpg`
 - Reference studio used for QA: `a0194883-24e4-49a0-aa41-dd4fb03454c5` (45-min podcast, 8 clips, AI-scored 37–66).
