@@ -102,6 +102,14 @@ describe("captions", () => {
   });
 });
 
+describe("escapeDrawtext", () => {
+  it("keeps an apostrophe inside a single-quoted drawtext value", async () => {
+    const { escapeDrawtext } = await import("./pipeline");
+    const filter = `text='${escapeDrawtext("I think that really it's again this")}'`;
+    expect(filter).toBe("text='I think that really it'\\''s again this'");
+  });
+});
+
 describe("splitCoverTitle", () => {
   it("keeps every word of a long title (no silent drop)", async () => {
     const { splitCoverTitle } = await import("./pipeline");

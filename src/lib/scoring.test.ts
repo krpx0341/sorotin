@@ -42,6 +42,19 @@ describe("hook line", () => {
     expect(h).toMatch(/mantan/i);
   });
 
+  it("does not treat initials as sentence breaks", () => {
+    const segs = [
+      seg(
+        0,
+        20,
+        "And there was a series of mergers that took place between the big internet backbones of the time. Now, a lot of them don't exist or they were bought up at M. C. I. World Comm, U. U. Net, Sprint.",
+      ),
+    ];
+    const h = localHookLine("raw", segs, 0, 20);
+    expect(h.toLowerCase()).not.toMatch(/world comm/);
+    expect(h.toLowerCase()).toMatch(/mergers|exist|bought|now|series/);
+  });
+
   it("sanitizes AI hooks", () => {
     expect(sanitizeHook('"ternyata dia selama ini bohong soal semuanya ke aku dan keluarga besar"')).toMatch(/…$/);
     expect(sanitizeHook("kenapa dia pergi")).toBe("Kenapa dia pergi?");

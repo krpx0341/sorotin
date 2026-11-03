@@ -560,8 +560,14 @@ function aspectSize(aspect: AspectRatio): { w: number; h: number } {
 }
 
 
-function escapeDrawtext(s: string) {
-  return s.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'").replace(/%/g, "\\%");
+export function escapeDrawtext(s: string) {
+  // Apostrophes are wrapped in single quotes by the drawtext filter (`text='…'`).
+  // A backslash does not escape a quote there; close the quote, insert \', reopen.
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/%/g, "\\%")
+    .replace(/'/g, "'\\''");
 }
 
 async function renderClip(
