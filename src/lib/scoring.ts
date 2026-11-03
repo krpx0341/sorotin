@@ -65,12 +65,30 @@ const count = (re: RegExp, t: string) => (t.match(re) || []).length;
 const uniq = (re: RegExp, t: string) => [...new Set((t.match(re) || []).map((x) => x.toLowerCase()))];
 
 export function clipText(segments: TranscriptSegment[], start: number, end: number): string {
-  return norm(
-    segments
-      .filter((s) => s.end > start + 0.2 && s.start < end - 0.2)
-      .map((s) => s.text)
-      .join(" "),
-  );
+  const parts: string[] = [];
+  let sawWords = false;
+  for (const s of segments) {
+    const words = (s.words || []).filter((w) => w.word.trim());
+    if (words.length) {
+      sawWords = true;
+      for (const w of words) {
+        // Whole words only. A segment that started before the cut must not
+        // contribute the words that were left outside the clip.
+        if (w.start >= start - 0.02 && w.end <= end + 0.02) parts.push(w.word.trim());
+      }
+      continue;
+    }
+    if (s.end > start + 0.2 && s.start < end - 0.2) parts.push(s.text);
+  }
+  if (sawWords && !parts.length) {
+    return norm(
+      segments
+        .filter((s) => s.end > start + 0.2 && s.start < end - 0.2)
+        .map((s) => s.text)
+        .join(" "),
+    );
+  }
+  return norm(parts.join(" "));
 }
 
 /** Local, labelled estimate. Deliberately conservative: typical clips land ~35–65. */
@@ -226,7 +244,11 @@ function pickLine(
 ): string {
   const early = clipText(segments, start, Math.min(end, start + Math.max(10, (end - start) * 0.4)));
   const pieces: Array<{ text: string; fromTitle: boolean; pos: number }> = [];
-  const split = (t: string) => t.match(/[^.?!…]+[.?!…]*/g) || [];
+  // Periods after a single initial ("M. C. I.", "U. U. Net") are not sentence ends.
+  const split = (t: string) => {
+    const masked = t.replace(/(^|[\s])([A-Za-z])\./g, "$1$2\u0001");
+    return (masked.match(/[^.?!…]+[.?!…]*/g) || []).map((p) => p.replace(/\u0001/g, ".").trim()).filter(Boolean);
+  };
   split(title).forEach((p, i) => pieces.push({ text: p, fromTitle: true, pos: i }));
   split(early).forEach((p, i) => {
     pieces.push({ text: p, fromTitle: false, pos: i });
@@ -245,11 +267,15 @@ function pickLine(
     const t = cleanPhrase(pc.text);
     const n = t ? t.split(" ").length : 0;
     if (n < 3) continue;
+    // "M. C. I." / "U. U. Net" are Whisper initials, not a hook.
+    const letters = t.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+    if (letters.length && letters.filter((w) => w.length <= 1).length / letters.length >= 0.5) continue;
     if (wholeOnly && fits && !fitsLen(t)) continue;
     let sc = 0;
     if (QUESTION.test(t)) sc += wholeOnly ? 1 : 2;
     // a title has to say what the clip is about; vague one-liners lose
     if (wholeOnly) sc += Math.min(2.5, substance(t) * 0.5) - (substance(t) < 2 ? 1.5 : 0);
+    else if (substance(t) < 2) sc -= 1.5;
     sc += Math.min(2, count(HOOKY, t)) + Math.min(2, count(EMOTION, t));
     if (/\d/.test(t)) sc += 0.6;
     if (CONNECTOR_START.test(t)) sc -= 1.5;
