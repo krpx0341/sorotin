@@ -1,5 +1,7 @@
 # Pins for the CI smoke tests of scripts/*.py.
-# OpenCV stays on 4.x: 5.x removed cv2.CascadeClassifier, which face_track.py calls.
+# Face detection uses YuNet (cv2.FaceDetectorYN), which ships in OpenCV 4.8+ and 5.x.
+# This file is the OpenCV 4 pin. The OpenCV 5 CI leg installs this lock, then overrides
+# only opencv-python-headless. Haar CascadeClassifier is not used.
 numpy==2.5.4
 opencv-python-headless==4.14.0.94
 pillow==11.3.0

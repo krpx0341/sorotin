@@ -226,10 +226,13 @@ async function bundlePython() {
     "pip",
     "install",
     "faster-whisper",
-    "opencv-python-headless>=4.8,<5",
+    "opencv-python-headless>=4.8,<6",
     "pillow",
   ]);
-  run(py, ["-c", "import faster_whisper, cv2, PIL; print('python ok')"]);
+  run(py, [
+    "-c",
+    "import faster_whisper, cv2, PIL; assert hasattr(cv2, 'FaceDetectorYN'), cv2.__version__; print('python ok', cv2.__version__)",
+  ]);
   writeFileSync(path.join(pythonDir, ".sorotin-ok"), "ok\n");
   console.log("python", py);
 }
@@ -252,12 +255,26 @@ async function bundleFonts() {
   console.log("font", dest);
 }
 
+function includeBundledScript(src) {
+  const scriptsRoot = path.join(root, "scripts");
+  const rel = path.relative(scriptsRoot, src);
+  if (rel === "") return true;
+  const parts = rel.split(path.sep);
+  // tests/ lives at the repo root and is not copied. Also skip a tests/ tree
+  // if one is ever placed under scripts/, plus test modules and caches.
+  if (parts.includes("tests") || parts.includes("__pycache__")) return false;
+  const base = path.basename(src);
+  if (base.endsWith(".mjs") || base.includes("bundle-sidecars")) return false;
+  if (base.startsWith("test_") || base.endsWith(".pyc")) return false;
+  return true;
+}
+
 function bundleScripts() {
   const dest = path.join(res, "scripts");
   rmSync(dest, { recursive: true, force: true });
   cpSync(path.join(root, "scripts"), dest, {
     recursive: true,
-    filter: (p) => !p.endsWith(".mjs") && !p.includes("bundle-sidecars"),
+    filter: includeBundledScript,
   });
   console.log("scripts", dest);
 }
@@ -273,10 +290,21 @@ function verify() {
   const out = `${ass.stdout || ""}\n${ass.stderr || ""}`;
   if (!/\bass\b/.test(out)) throw new Error("bundled ffmpeg has no ass filter (need libass)");
   if (!/\bdrawtext\b/.test(out)) throw new Error("bundled ffmpeg has no drawtext filter");
+  const yunet = path.join(res, "scripts", "models", "face_detection_yunet_2023mar.onnx");
+  if (!existsSync(yunet)) throw new Error(`missing YuNet model (bundled with scripts): ${yunet}`);
   console.log("verify ok");
 }
 
 const steps = [bundleNode, bundleFfmpeg, bundleYtDlp, bundlePython, bundleFonts, bundleScripts, verify];
+if (process.argv.includes("--scripts-filter-check")) {
+  const dest = process.argv[process.argv.indexOf("--scripts-filter-check") + 1];
+  if (!dest) throw new Error("--scripts-filter-check needs a destination directory");
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  cpSync(path.join(root, "scripts"), dest, { recursive: true, filter: includeBundledScript });
+  console.log("scripts filter check", dest);
+  process.exit(0);
+}
 for (const step of steps) {
   await step();
 }

@@ -24,6 +24,16 @@ jobs:
 
   python-smoke:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 4.x is whatever scripts/requirements-lock.txt pins. 5.x installs that
+          # same lock, then replaces only opencv-python-headless.
+          - name: opencv4
+            opencv_override: ""
+          - name: opencv5
+            opencv_override: "opencv-python-headless>=5,<6"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,6 +42,13 @@ jobs:
           cache: pip
           cache-dependency-path: scripts/requirements-lock.txt
       - run: python -m pip install --disable-pip-version-check -r scripts/requirements-lock.txt
-      - run: bash scripts/secret-scan.sh
-      - run: bash tests/secret-scan.test.sh
+      - name: Override OpenCV for the 5.x leg
+        if: matrix.opencv_override != ''
+        run: python -m pip install --disable-pip-version-check "${{ matrix.opencv_override }}"
+      # Once per workflow, not once per OpenCV version.
+      - name: Secret scan
+        if: matrix.name == 'opencv4'
+        run: |
+          bash scripts/secret-scan.sh
+          bash tests/secret-scan.test.sh
       - run: python -m pytest tests/smoke -q

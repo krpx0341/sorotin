@@ -29,14 +29,38 @@ def run_script(name: str, args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_opencv_locked_below_5() -> None:
-    # The wheel reports cv2.__version__ as 4.14.0; the distribution pin is 4.14.0.94.
-    assert version("opencv-python-headless") == "4.14.0.94"
-    assert version("numpy") == "2.5.4"
-    assert int(cv2.__version__.split(".", 1)[0]) < 5
-    assert hasattr(cv2, "CascadeClassifier")
-    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml")
-    assert not cascade.empty()
+def _lock_pins() -> dict[str, str]:
+    pins: dict[str, str] = {}
+    for line in (SCRIPTS / "requirements-lock.txt").read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if "==" not in line:
+            continue
+        name, pin = line.split("==", 1)
+        pins[name.strip()] = pin.strip()
+    return pins
+
+
+def test_opencv_lock_is_yunet_4_and_runtime_has_face_detector() -> None:
+    """requirements-lock.txt pins OpenCV 4. The 5.x CI leg overrides only that package."""
+    text = (SCRIPTS / "requirements-lock.txt").read_text()
+    assert "YuNet" in text
+    assert "FaceDetectorYN" in text
+    pins = _lock_pins()
+    assert pins["opencv-python-headless"] == "4.14.0.94"
+    assert pins["numpy"] == "2.5.4"
+    assert pins["pillow"] == "11.3.0"
+    assert pins["pytest"] == "8.4.2"
+    assert hasattr(cv2, "FaceDetectorYN")
+    major = int(cv2.__version__.split(".", 1)[0])
+    assert major in (4, 5)
+    if major == 4:
+        assert version("opencv-python-headless") == pins["opencv-python-headless"]
+    else:
+        assert version("opencv-python-headless").split(".", 1)[0] == "5"
+    # Override only opencv; the rest of the lock still applies.
+    assert version("numpy") == pins["numpy"]
+    assert version("pillow") == pins["pillow"]
+    assert version("pytest") == pins["pytest"]
 
 
 @pytest.mark.parametrize("name", SCRIPT_NAMES)
@@ -132,6 +156,10 @@ def test_manifest_fixture_has_no_videos_or_workspace_paths() -> None:
         assert not Path(item["file"]).is_absolute()
         assert item["file"].endswith(".mp4")
         assert len(item["sha256"]) == 64
+        by_ffmpeg = item["sha256_by_ffmpeg"]
+        assert by_ffmpeg["7.1.5"] == item["sha256"]
+        assert len(by_ffmpeg["6.1.1"]) == 64
+        assert by_ffmpeg["6.1.1"] != item["sha256"]
         assert item["license"]
         assert item["attribution"]
         assert item["duration_sec"] > 0

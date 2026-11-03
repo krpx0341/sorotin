@@ -7,3 +7,11 @@
 - Entri `ours.mp4` tidak ikut karena lisensinya tidak jelas.
 
 Path di manifest relatif. Jangan menulis path absolut mesin lokal.
+
+`sha256` adalah encode QA dengan ffmpeg 7.1.5. `sha256_by_ffmpeg` menyimpan hash itu plus hash rebuild ffmpeg 6.1.1 dari perintah yang sama (byte bisa beda). Runner menerima keduanya.
+
+Jalankan detektor pada video yang sudah di-rebuild (file video tetap di luar repo):
+
+```bash
+FIXTURE_DIR=/path/to/mp4s python3 tests/fixtures/run_face_fixtures.py
+```

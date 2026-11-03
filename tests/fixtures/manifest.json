@@ -3,15 +3,15 @@
   "created": "2026-11-01 WIB",
   "repo": "krpx0341/sorotin",
   "repo_commit": "9716482",
-  "tool": "scripts/face_track.py --start 0 --end <durasi> --allow-dual",
+  "tool": "scripts/face_track.py --start 0 --end <durasi> --allow-dual (YuNet)",
   "env": {
     "python": "3.13.5",
     "opencv_python_headless": "4.14.0.94",
     "numpy": "2.5.4",
     "ffmpeg": "7.1.5-0+deb13u1"
   },
-  "regen": "Unduh ulang dari source_file_url, lalu potong sesuai ffmpeg_command. Lihat tests/fixtures/README.md.",
-  "note": "Video tidak masuk repo. Koordinat cx/cy dinormalisasi 0-1 terhadap lebar/tinggi frame.",
+  "regen": "FIXTURE_DIR=/path/to/mp4s python3 tests/fixtures/run_face_fixtures.py",
+  "note": "Video tidak masuk repo. sha256 adalah encode QA (ffmpeg 7.1.5). sha256_by_ffmpeg juga menyimpan hash rebuild ffmpeg 6.1.1 dari filter graph yang sama; runner menerima keduanya.",
   "fixtures": [
     {
       "file": "center_single.mp4",
@@ -43,9 +43,14 @@
         "layout": "single",
         "crop_cx_within_face": 0.05,
         "hard_cuts": 0,
-        "notes": "Tanpa kartu teks (kartu di sumber 188-193.5 s dan 234.3 s dilewati)."
+        "notes": "Tanpa kartu teks (kartu di sumber 188-193.5 s dan 234.3 s dilewati).",
+        "min_hit_rate": 0.95
       },
-      "baseline_log": "baseline/center_single.log"
+      "baseline_log": "baseline/center_single.log",
+      "sha256_by_ffmpeg": {
+        "7.1.5": "f3eb07a1f091c16efa5cd8759be658f73102f54d958858f4199de5405b616dad",
+        "6.1.1": "e50672dd8e3e6bff84ba655df7ad5e62df98b2d3f4b917d1d9bbc71917ba59fb"
+      }
     },
     {
       "file": "edge_face_right.mp4",
@@ -72,9 +77,18 @@
         ],
         "face_right_edge_gt": 0.95,
         "layout": "single",
-        "notes": "Crop 9:16 pasti mentok di kanan (crop_cx maks 0.842). Sesuai HANDOFF TODO 2, wajah dalam ~8% dari tepi idealnya diberi padding/blur-fill atau minimal wajah tetap utuh di dalam crop. Deteksi wajah harus >= 90% sampel."
+        "notes": "Detection >= 90% of samples. The 9:16 window cannot slide far enough to center this face inside the frame, so the crop carries place_* and the renderer blur-fills the gap. The face should land near the middle of the output pane (output_cx) and stay fully inside the sharp slice.",
+        "min_hit_rate": 0.9,
+        "output_cx": [
+          0.42,
+          0.58
+        ]
       },
-      "baseline_log": "baseline/edge_face_right.log"
+      "baseline_log": "baseline/edge_face_right.log",
+      "sha256_by_ffmpeg": {
+        "7.1.5": "855367ef06a7588c59fcd6fa8b77b3d906ee92dfe3f8f0eba35c32d2abe1a7d0",
+        "6.1.1": "eefc89cb0612067aa48caddfb1ef2e6be84935eb3326a62a5a701ea3e1064eae"
+      }
     },
     {
       "file": "two_people.mp4",
@@ -107,9 +121,14 @@
         ],
         "layout": "dual (dengan --allow-dual)",
         "hard_cuts": 0,
-        "notes": "Kamera bergerak/zoom pelan sekitar 12-14 s, bukan hard cut. Lower-third 'CPA Douglas Harrison' muncul ~13-22 s di kiri bawah."
+        "notes": "Kamera bergerak/zoom pelan sekitar 12-14 s, bukan hard cut. Lower-third 'CPA Douglas Harrison' muncul ~13-22 s di kiri bawah.",
+        "min_hit_rate": 0.85
       },
-      "baseline_log": "baseline/two_people.log"
+      "baseline_log": "baseline/two_people.log",
+      "sha256_by_ffmpeg": {
+        "7.1.5": "71bbe87b2c3902d1588c9d23fffdeb46d54e11ad1ccc00bb4232e9716e3c9c6c",
+        "6.1.1": "fb43abe95b8d326618be4cff97425792a7cef40660f103f32ebe073c9b6e05d6"
+      }
     },
     {
       "file": "closeup_large.mp4",
@@ -141,9 +160,14 @@
         "layout": "single",
         "crop_cx_within_face": 0.05,
         "hard_cuts": 0,
-        "notes": "Kontrol untuk Bug B: close-up 16:9 ini terdeteksi normal."
+        "notes": "Kontrol untuk Bug B: close-up 16:9 ini terdeteksi normal.",
+        "min_hit_rate": 0.95
       },
-      "baseline_log": "baseline/closeup_large.log"
+      "baseline_log": "baseline/closeup_large.log",
+      "sha256_by_ffmpeg": {
+        "7.1.5": "be8dc45c3d40937281f15c287b4bc9a296914c17724b3d382df154257e91fccc",
+        "6.1.1": "d9008274d20304b18db14e96f5f1ea0012b0e670b7c67eea03568d0f9ca688d6"
+      }
     }
   ]
 }

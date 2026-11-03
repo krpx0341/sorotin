@@ -44,6 +44,11 @@ next-env.d.ts
 
 # local clipper runtime
 /data
+
+# face fixtures are rebuilt from tests/fixtures/manifest.json; do not commit video
+/tests/fixtures/*.mp4
+/tests/fixtures/*.webm
+/tests/fixtures/raw/
 /.venv
 __pycache__/
 *.pyc
