@@ -1,3 +1,4 @@
+import { notoRealDimWidth } from "./noto-metrics";
 import type { TranscriptSegment } from "./types";
 
 const EMPHASIS_RE =
@@ -41,10 +42,12 @@ export function wordsForClip(
 ): CaptionWord[] {
   const out: CaptionWord[] = [];
   for (const seg of segments) {
-    if (seg.end < clipStart || seg.start > clipEnd) continue;
+    // A word that only touches the boundary (ends at clipStart, or starts at
+    // clipEnd) is outside the clip. The same rule applies to a whole segment.
+    if (seg.end <= clipStart || seg.start >= clipEnd) continue;
     if (seg.words?.length) {
       for (const w of seg.words) {
-        if (w.end < clipStart || w.start > clipEnd) continue;
+        if (w.end <= clipStart || w.start >= clipEnd) continue;
         out.push({
           start: Math.max(clipStart, w.start),
           end: Math.min(clipEnd, w.end),
@@ -100,6 +103,52 @@ export function defaultCaptionMarginV(playResY: number) {
 /** Height (0..1 of frame) of a caption block of `lines` lines incl. the active-word pop. */
 export function captionBandHeight(playResY: number, lines = 2) {
   return (captionFontSize(playResY) * 1.18 * 1.22 * lines) / playResY;
+}
+
+/**
+ * How many visual lines the karaoke chunks need during [hookStart, hookEnd).
+ * One word in each chunk is popped to 118%, which is what pushes a long token
+ * onto a second line.
+ */
+export function maxCaptionLines(
+  words: CaptionWord[],
+  playResX: number,
+  playResY: number,
+  hookStart: number,
+  hookEnd: number,
+): number {
+  const visible = words.filter((w) => w.end > hookStart && w.start < hookEnd);
+  if (!visible.length) return 1;
+  let max = 1;
+  for (const chunk of chunkWords(visible)) {
+    const tokens = chunk.map((w) => toDisplayWord(w.word)).filter(Boolean);
+    if (tokens.length) max = Math.max(max, wrappedCaptionLines(tokens, playResX, playResY));
+  }
+  return max;
+}
+
+function wrappedCaptionLines(tokens: string[], playResX: number, playResY: number): number {
+  const font = captionFontSize(playResY);
+  const margin = Math.round(playResX * 0.06);
+  const avail = Math.max(40, playResX - 2 * margin);
+  let worst = 1;
+  for (let active = 0; active < tokens.length; active++) {
+    let lines = 1;
+    let used = 0;
+    tokens.forEach((token, i) => {
+      const scale = i === active ? 1.18 : 1;
+      const width = notoRealDimWidth(token, font, scale) + Math.max(0, token.length - 1) * 1.2 * scale;
+      const gap = used > 0 ? notoRealDimWidth(" ", font, 1) : 0;
+      if (used > 0 && used + gap + width > avail) {
+        lines += 1;
+        used = width;
+      } else {
+        used += gap + width;
+      }
+    });
+    worst = Math.max(worst, lines);
+  }
+  return worst;
 }
 
 export type CaptionPlacementSpan = { start: number; end: number; marginV: number };

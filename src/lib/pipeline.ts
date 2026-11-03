@@ -8,6 +8,7 @@ import {
   buildAssCaptions,
   captionBandHeight,
   defaultCaptionMarginV,
+  maxCaptionLines,
   wordsForClip,
 } from "./captions";
 import { captionFontDir, clipperPython, clipperScript, coverFont, pythonChildEnv } from "./tools";
@@ -22,8 +23,9 @@ import type {
   TranscriptSegment,
 } from "./types";
 import { loadStudioRaw as loadStudio, mediaRoot, publicMediaUrl, saveStudio, studioDir } from "./store";
-import { clipText, gradesFromParts, localHookLine, localScoring, localTitle } from "./scoring";
+import { clipText, gradesFromParts, localHookLine, localScoring, localTitle, onScreenHook } from "./scoring";
 import { cleanStudioTitle } from "./title";
+import { captionInkTop, placeHookCard } from "./hook-place";
 import {
   buildReframeGraph,
   captionPlacements,
@@ -603,39 +605,73 @@ async function renderClip(
 
   // Overlay filters shared by -vf and filter_complex paths (hook + captions).
   const overlayParts: string[] = [];
+  const words =
+    skills.captions && studio.transcript?.length ? wordsForClip(studio.transcript, clip.start, clip.end) : [];
   // Hook card: real-font measured PNG (wraps 1–3 lines, shrinks to fit 88% width).
   let hookPng: string | null = null;
   let hookY = 0;
   if (skills.smartHook) {
-    const hookText = clip.hook || localHookLine(clip.title, studio.transcript || [], clip.start, clip.end);
+    const hookText = onScreenHook(clip, studio.transcript || [], w, h);
     const pngPath = path.join(outDir, "hook.png");
+    const preferTop = h > w ? 0.085 : 0.05;
+    const captionLines = words.length ? maxCaptionLines(words, w, h, clip.start, clip.start + HOOK_SECONDS) : 1;
+    const dualHook = segments.some((s) => s.start < HOOK_SECONDS && s.layout === "dual");
     try {
-      const { stdout } = await run(clipperPython(), [
-        clipperScript("hook_card.py"),
-        "--text",
-        hookText,
-        "--frame-w",
-        String(w),
-        "--frame-h",
-        String(h),
-        "--out",
-        pngPath,
-        "--font",
-        coverFont(),
-        "--style",
-        skills.hookStyle || "classic",
-      ]);
-      const meta = JSON.parse(stdout) as { w: number; h: number };
+      const renderHook = async (maxHeight?: number) => {
+        const args = [
+          clipperScript("hook_card.py"),
+          "--text",
+          hookText,
+          "--frame-w",
+          String(w),
+          "--frame-h",
+          String(h),
+          "--out",
+          pngPath,
+          "--font",
+          coverFont(),
+          "--style",
+          skills.hookStyle || "classic",
+        ];
+        if (maxHeight && maxHeight > 0) args.push("--max-height", String(Math.round(maxHeight)));
+        const { stdout } = await run(clipperPython(), args);
+        return JSON.parse(stdout) as { w: number; h: number };
+      };
+      let meta = await renderHook();
       if (meta.w > 0 && meta.w <= w) {
         hookPng = pngPath;
-        // Below platform top UI (TikTok/Reels bar ≈ 7–8% of height), but never over a face.
-        const top = pickHookTop(segments, {
-          cardH: meta.h / h,
-          cardW: meta.w / w,
-          hookSec: HOOK_SECONDS,
-          preferTop: h > w ? 0.085 : 0.05,
-        });
-        hookY = Math.round(h * top);
+        if (dualHook) {
+          // Split shots keep the card above the seam; captions there are not the bottom band.
+          hookY = Math.round(
+            h *
+              pickHookTop(segments, {
+                cardH: meta.h / h,
+                cardW: meta.w / w,
+                hookSec: HOOK_SECONDS,
+                preferTop,
+              }),
+          );
+        } else {
+          const captionTop = captionInkTop(h, captionLines);
+          let plan = placeHookCard(segments, {
+            cardH: meta.h / h,
+            cardW: meta.w / w,
+            hookSec: HOOK_SECONDS,
+            preferTop,
+            captionTop,
+          });
+          if (plan.cardH < meta.h / h - 0.012) {
+            meta = await renderHook(Math.max(48, plan.cardH * h));
+            plan = placeHookCard(segments, {
+              cardH: meta.h / h,
+              cardW: meta.w / w,
+              hookSec: HOOK_SECONDS,
+              preferTop,
+              captionTop,
+            });
+          }
+          hookY = Math.round(h * plan.top);
+        }
       }
     } catch (e) {
       if (e instanceof JobAbortedError) throw e;
@@ -643,29 +679,26 @@ async function renderClip(
     }
   }
 
-  if (skills.captions && studio.transcript?.length) {
-    const words = wordsForClip(studio.transcript, clip.start, clip.end);
-    if (words.length) {
-      fs.writeFileSync(
-        assPath,
-        buildAssCaptions({
-          words,
-          playResX: w,
-          playResY: h,
-          clipStart: clip.start,
-          placements: segments.length
-            ? captionPlacements(segments, {
-                playResY: h,
-                defaultMarginV: defaultCaptionMarginV(h),
-                bandH: captionBandHeight(h, 2),
-              })
-            : undefined,
-        }),
-        "utf8",
-      );
-      const fontsEsc = captionFontDir().replace(/\\/g, "\\\\").replace(/:/g, "\\:");
-      overlayParts.push(`ass='${escapeAssPath(assPath)}':fontsdir='${fontsEsc}'`);
-    }
+  if (words.length) {
+    fs.writeFileSync(
+      assPath,
+      buildAssCaptions({
+        words,
+        playResX: w,
+        playResY: h,
+        clipStart: clip.start,
+        placements: segments.length
+          ? captionPlacements(segments, {
+              playResY: h,
+              defaultMarginV: defaultCaptionMarginV(h),
+              bandH: captionBandHeight(h, 2),
+            })
+          : undefined,
+      }),
+      "utf8",
+    );
+    const fontsEsc = captionFontDir().replace(/\\/g, "\\\\").replace(/:/g, "\\:");
+    overlayParts.push(`ass='${escapeAssPath(assPath)}':fontsdir='${fontsEsc}'`);
   }
 
   const ffmpegIn = [

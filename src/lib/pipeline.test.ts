@@ -76,6 +76,36 @@ describe("proposeClips", () => {
 });
 
 describe("captions", () => {
+  it("drops a word that ends exactly at clipStart, and one that starts at clipEnd", () => {
+    const words = wordsForClip(
+      [
+        {
+          start: 0,
+          end: 5.5,
+          text: "the Federal Communications",
+          words: [
+            { start: 4.2, end: 4.8, word: "Federal" },
+            { start: 5.06, end: 5.5, word: "Communications" },
+          ],
+        },
+        {
+          start: 5.5,
+          end: 12,
+          text: "Commission in the end",
+          words: [
+            { start: 5.5, end: 6.32, word: "Commission" },
+            { start: 6.32, end: 6.5, word: "in" },
+            { start: 11.5, end: 12, word: "end" },
+            { start: 12, end: 12.4, word: "after" },
+          ],
+        },
+      ],
+      5.5,
+      12,
+    );
+    expect(words.map((w) => w.word)).toEqual(["Commission", "in", "end"]);
+  });
+
   it("builds timed ASS with keyword highlights", () => {
     const words = wordsForClip(
       [
