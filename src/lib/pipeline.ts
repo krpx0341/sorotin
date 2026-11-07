@@ -584,7 +584,8 @@ async function renderClip(
           w,
           h,
           // Opus-style top/bottom split only makes sense for vertical output.
-          allowDual: aspect === "9:16",
+          // forceSingle keeps one framing (video-1 look) even with two faces.
+          allowDual: aspect === "9:16" && !skills.forceSingle,
         })
       : null;
   // A hard cut in the first/last 0.2s = a flash frame of the neighbouring shot (e.g. one
@@ -653,6 +654,7 @@ async function renderClip(
           playResX: w,
           playResY: h,
           clipStart: clip.start,
+          style: skills.captionStyle,
           placements: segments.length
             ? captionPlacements(segments, {
                 playResY: h,
@@ -953,53 +955,56 @@ export async function processStudio(studioId: string) {
       progress: { pct: 62, message: `${tr.segments.length} segmen transcript` },
     });
 
-    bump({ status: "clipping", progress: { pct: 66, message: "Deteksi silence + scene…" } });
-    const [silences, scenes] = await Promise.all([
-      detectSilences(audioPath),
-      detectScenes(current.mediaPath!, current.durationSec || durationSec),
-    ]);
+    const curated = current.clips.filter((clip) => clip.reason === "Rentang kurator");
+    bump({ status: "clipping", progress: { pct: 66, message: curated.length ? "Validasi rentang kurator…" : "Deteksi silence + scene…" } });
     const targetSec = Number(current.targetSec || process.env.PERSONAL_CLIPPER_TARGET_SEC || 40);
     const maxClips = Number(process.env.PERSONAL_CLIPPER_MAX_CLIPS || 8);
-    let candidates: ClipCandidate[] = [];
-    let clipSource = "local";
+    let candidates: ClipCandidate[] = curated;
+    let clipSource = curated.length ? "curator" : "local";
     let ranking: NonNullable<Studio["ranking"]> = { source: "local" };
-    try {
-      const { loadAiSettings } = await import("./ai-settings");
-      const aiSettings = loadAiSettings();
-      if (aiSettings.enabled && aiSettings.model && (current.transcript || []).length) {
-        bump({ progress: { pct: 68, message: `AI ranking (${aiSettings.model})…` } });
-        const { rankClipsWithAi } = await import("./ai");
-        candidates = await rankClipsWithAi(current.transcript || [], current.durationSec || durationSec, {
+    if (!curated.length) {
+      const [silences, scenes] = await Promise.all([
+        detectSilences(audioPath),
+        detectScenes(current.mediaPath!, current.durationSec || durationSec),
+      ]);
+      try {
+        const { loadAiSettings } = await import("./ai-settings");
+        const aiSettings = loadAiSettings();
+        if (aiSettings.enabled && aiSettings.model && (current.transcript || []).length) {
+          bump({ progress: { pct: 68, message: `AI ranking (${aiSettings.model})…` } });
+          const { rankClipsWithAi } = await import("./ai");
+          candidates = await rankClipsWithAi(current.transcript || [], current.durationSec || durationSec, {
+            targetSec,
+            maxClips,
+          });
+          clipSource = "ai";
+          ranking = { source: "ai", model: aiSettings.model };
+        } else if (aiSettings.enabled && !aiSettings.model) {
+          ranking = { source: "local", error: "AI aktif tapi model belum dipilih di Settings" };
+        }
+      } catch (e) {
+        const { loadAiSettings } = await import("./ai-settings");
+        ranking = {
+          source: "local",
+          model: loadAiSettings().model || undefined,
+          error: e instanceof Error ? e.message.slice(0, 200) : String(e),
+        };
+        bump({
+          progress: {
+            pct: 69,
+            message: `AI gagal, fallback lokal: ${e instanceof Error ? e.message.slice(0, 80) : "error"}`,
+          },
+        });
+      }
+      if (!candidates.length) {
+        candidates = proposeClips(current.transcript || [], current.durationSec || durationSec, {
           targetSec,
           maxClips,
+          silences,
+          scenes,
         });
-        clipSource = "ai";
-        ranking = { source: "ai", model: aiSettings.model };
-      } else if (aiSettings.enabled && !aiSettings.model) {
-        ranking = { source: "local", error: "AI aktif tapi model belum dipilih di Settings" };
+        clipSource = "local";
       }
-    } catch (e) {
-      const { loadAiSettings } = await import("./ai-settings");
-      ranking = {
-        source: "local",
-        model: loadAiSettings().model || undefined,
-        error: e instanceof Error ? e.message.slice(0, 200) : String(e),
-      };
-      bump({
-        progress: {
-          pct: 69,
-          message: `AI gagal, fallback lokal: ${e instanceof Error ? e.message.slice(0, 80) : "error"}`,
-        },
-      });
-    }
-    if (!candidates.length) {
-      candidates = proposeClips(current.transcript || [], current.durationSec || durationSec, {
-        targetSec,
-        maxClips,
-        silences,
-        scenes,
-      });
-      clipSource = "local";
     }
     candidates = (await ensureScoring(candidates, current.transcript || [])).clips;
     current = bump({

@@ -1,4 +1,4 @@
-import type { TranscriptSegment } from "./types";
+import type { CaptionStyle, TranscriptSegment } from "./types";
 
 const EMPHASIS_RE =
   /viral|tips|cara|rahasia|penting|jangan|ternyata|akhirnya|shock|gila|wow|must|never|secret|hack|why|how|mistake|warning|stop|wait|listen|best|worst|bongkar|fakta|hati-hati|wajib|langsung|diet|turun|kg|bulan|jujur|cerita|banget|sekali|parah|gokil|serius|coba|tunggu|fun|fact|sampai|ngaku|selingkuh|suami|istri/i;
@@ -87,6 +87,9 @@ function chunkWords(words: CaptionWord[], maxWords = 3): CaptionWord[][] {
 /**
  * OpusClip-like ASS: 2–3 words, ALL CAPS, thick outline + shadow,
  * active spoken word pops yellow (scale + color).
+ * Style "hijau" (video-1 look): active word pops bright green, every other
+ * word stays pure white, and the caption band stays fixed at the default
+ * lower-third margin (per-shot placements are ignored).
  */
 export function captionFontSize(playResY: number) {
   return Math.round(playResY * 0.058);
@@ -126,19 +129,25 @@ export function buildAssCaptions(opts: {
   playResX: number;
   playResY: number;
   clipStart: number;
-  /** Per-shot vertical placement (clip-relative seconds). */
+  /** Caption highlight style ("classic" = yellow, "hijau" = green, fixed band). */
+  style?: CaptionStyle;
+  /** Per-shot vertical placement (clip-relative seconds). Ignored when style is "hijau". */
   placements?: CaptionPlacementSpan[];
 }): string {
-  const { words, playResX, playResY, clipStart, placements } = opts;
+  const { words, playResX, playResY, clipStart, placements, style } = opts;
+  const isHijau = style === "hijau";
+  // "hijau" keeps one fixed band, so per-shot placements must not move it.
+  const effectivePlacements = isHijau ? undefined : placements;
   const rel = (t: number) => Math.max(0, t - clipStart);
   const chunks = chunkWords(words, 3);
   const events: string[] = [];
 
   const white = "&H00FFFFFF&";
-  const dim = "&H00E8E8E8&";
+  const dim = isHijau ? white : "&H00E8E8E8&";
   // ASS colour = &HAABBGGRR&
   const yellow = "&H0000F5FF&"; // bright gold-yellow
   const hot = "&H00008CFF&"; // orange-hot for emphasis keywords
+  const green = "&H0035F51F&"; // bright green #1FF535 (hijau style)
 
   for (const chunk of chunks) {
     if (!chunk.length) continue;
@@ -152,7 +161,7 @@ export function buildAssCaptions(opts: {
           const token = escapeAss(toDisplayWord(w.word));
           if (!token) return "";
           if (j === i) {
-            const color = EMPHASIS_RE.test(wordKey(w.word)) ? hot : yellow;
+            const color = isHijau ? green : EMPHASIS_RE.test(wordKey(w.word)) ? hot : yellow;
             // Pop: bold + scale + slight blur edge
             return `{\\c${color}\\b1\\fscx118\\fscy118\\bord5}${token}{\\c${white}\\b0\\fscx100\\fscy100\\bord4}`;
           }
@@ -161,7 +170,7 @@ export function buildAssCaptions(opts: {
         .filter(Boolean)
         .join(" ");
       // An event crossing a shot boundary is split so each part uses that shot's position.
-      for (const part of splitByPlacement(start, end, placements)) {
+      for (const part of splitByPlacement(start, end, effectivePlacements)) {
         events.push(
           `Dialogue: 0,${assTime(part.start)},${assTime(part.end)},Caption,,0,0,${part.marginV},,${text}`,
         );

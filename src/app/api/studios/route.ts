@@ -26,6 +26,16 @@ const createSchema = z.object({
   exportAspect: z.enum(["9:16", "16:9", "1:1"]).optional(),
   targetSec: z.number().min(15).max(180).optional(),
   genre: z.string().optional(),
+  clipRanges: z
+    .array(
+      z.object({
+        start: z.number().min(0),
+        end: z.number().positive(),
+        title: z.string().min(1).max(200),
+      }).refine((range) => range.end > range.start, "end must be after start"),
+    )
+    .max(32)
+    .optional(),
   skills: z
     .object({
       smartCover: z.boolean().optional(),
@@ -34,6 +44,8 @@ const createSchema = z.object({
       autoReframe: z.boolean().optional(),
       captions: z.boolean().optional(),
       captionLanguage: z.enum(["id", "en", "auto"]).optional(),
+      captionStyle: z.enum(["classic", "hijau"]).optional(),
+      forceSingle: z.boolean().optional(),
     })
     .optional(),
 });
@@ -56,6 +68,7 @@ export async function POST(req: NextRequest) {
   let exportAspect: Studio["exportAspect"] | undefined;
   let targetSec: number | undefined;
   let genre: string | undefined;
+  let clipRanges: Array<{ start: number; end: number; title: string }> | undefined;
   let skillsPartial: Parameters<typeof mergeSkills>[0];
   let uploadAbs: string | undefined;
 
@@ -103,6 +116,7 @@ export async function POST(req: NextRequest) {
     exportAspect = body.exportAspect;
     targetSec = body.targetSec;
     genre = body.genre;
+    clipRanges = body.clipRanges;
     skillsPartial = body.skills;
     if (body.localPath) {
       const r = resolveLocalVideo(body.localPath);
@@ -134,7 +148,16 @@ export async function POST(req: NextRequest) {
     updatedAt: now,
     status: "queued",
     skills: mergeSkills(skillsPartial),
-    clips: [],
+    clips: clipRanges?.map((range) => ({
+      id: randomUUID(),
+      start: range.start,
+      end: range.end,
+      score: 0,
+      title: range.title,
+      titleEdited: true,
+      reason: "Rentang kurator",
+      status: "pending" as const,
+    })) || [],
     exportAspect: exportAspect || "9:16",
     mediaPath: uploadAbs,
     targetSec: targetSec || 40,

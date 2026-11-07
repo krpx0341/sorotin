@@ -13,6 +13,9 @@ export type AspectRatio = "9:16" | "16:9" | "1:1";
 
 export type HookStyle = "classic" | "dark" | "bold" | "sticker" | "clapper";
 
+/** Caption highlight style: "classic" = Sorotin default (yellow active word), "hijau" = video-1 look (green active word, fixed lower third). */
+export type CaptionStyle = "classic" | "hijau";
+
 export type SkillPacks = {
   smartCover: boolean;
   smartHook: boolean;
@@ -20,6 +23,9 @@ export type SkillPacks = {
   autoReframe: boolean;
   captions: boolean;
   captionLanguage: "id" | "en" | "auto";
+  captionStyle: CaptionStyle;
+  /** Force a single framing (never the dual top/bottom split). */
+  forceSingle: boolean;
 };
 
 export type TranscriptWord = {
@@ -130,6 +136,8 @@ export const DEFAULT_SKILLS: SkillPacks = {
   autoReframe: true,
   captions: true,
   captionLanguage: "id",
+  captionStyle: "classic",
+  forceSingle: false,
 };
 
 export const CLIP_LENGTH_PRESETS = [

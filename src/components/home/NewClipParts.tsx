@@ -138,12 +138,18 @@ const GENRE_META: Record<string, { short: string; hint: string }> = {
   general: { short: "General", hint: "Campuran / tidak yakin" },
 };
 
-type SkillKey = "smartCover" | "smartHook" | "autoReframe" | "captions";
+type SkillKey = "smartCover" | "smartHook" | "autoReframe" | "captions" | "forceSingle";
 const SKILLS: { key: SkillKey; title: string; desc: string; affects: string }[] = [
   {
     key: "autoReframe",
     title: "Auto reframe",
     desc: "Ikuti wajah per shot, split 2 orang otomatis",
+    affects: "Framing",
+  },
+  {
+    key: "forceSingle",
+    title: "Single layout",
+    desc: "Matikan split 2 orang, satu framing saja",
     affects: "Framing",
   },
   {
@@ -356,7 +362,7 @@ export function AdvancedPanel(props: {
 
       {/* Skills */}
       <div>
-        <SectionLabel hint={`${SKILLS.filter((s) => skills[s.key]).length}/4 aktif`}>Skill packs</SectionLabel>
+        <SectionLabel hint={`${SKILLS.filter((s) => skills[s.key]).length}/5 aktif`}>Skill packs</SectionLabel>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {SKILLS.map((s) => {
             const on = skills[s.key];
@@ -380,6 +386,34 @@ export function AdvancedPanel(props: {
               </div>
             );
           })}
+        </div>
+        <div className="mt-2.5">
+          <SectionLabel>Gaya caption</SectionLabel>
+          <div role="radiogroup" aria-label="Gaya caption" className="grid grid-cols-2 gap-2">
+            {(
+              [
+                { id: "classic", label: "Classic", hint: "Kata aktif kuning" },
+                { id: "hijau", label: "Hijau", hint: "Kata aktif hijau, posisi tetap" },
+              ] as const
+            ).map((c) => {
+              const on = (skills.captionStyle || "classic") === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => props.setSkills((cur) => ({ ...cur, captionStyle: c.id }))}
+                  className={`${optionCard(on)} px-3 py-2.5`}
+                >
+                  <span className={`block text-sm font-semibold ${on ? "text-emerald-100" : "text-zinc-200"}`}>
+                    {c.label}
+                  </span>
+                  <span className="mt-1 block text-[10.5px] leading-tight text-zinc-500">{c.hint}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
