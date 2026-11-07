@@ -17,12 +17,14 @@ type ViewMode = "grid" | "list";
 export function ClipWorkspace({
   studio,
   onPatchClip,
+  onPatchTranscript,
 }: {
   studio: Studio;
   onPatchClip: (
     clipId: string,
     patch: { liked?: boolean | null; hidden?: boolean; title?: string; description?: string },
   ) => Promise<void>;
+  onPatchTranscript: (segments: { index: number; text: string }[]) => Promise<void>;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>("score");
@@ -32,6 +34,9 @@ export function ClipWorkspace({
   // or a re-render that renames a clip never needs an effect to resync local state.
   const [drafts, setDrafts] = useState<Record<string, { title?: string; desc?: string }>>({});
   const [saving, setSaving] = useState(false);
+  // Unsaved transcript corrections, keyed by segment index in the full transcript.
+  const [transcriptDrafts, setTranscriptDrafts] = useState<Record<number, string>>({});
+  const [transcriptSaving, setTranscriptSaving] = useState(false);
   const linuxDesktop =
     typeof document !== "undefined" &&
     document.documentElement.dataset.shell === "desktop" &&
@@ -503,11 +508,70 @@ export function ClipWorkspace({
 
               <div>
                 <p className="mb-1 text-[11px] uppercase tracking-wide text-zinc-500">Transkrip</p>
-                <div className="max-h-36 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3 text-xs leading-relaxed text-zinc-300">
-                  {(studio.transcript || [])
-                    .filter((s) => s.end > selected.start && s.start < selected.end)
-                    .map((s) => s.text)
-                    .join(" ") || selected.reason || "—"}
+                <div className="max-h-36 space-y-1.5 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-3">
+                  {(() => {
+                    const segs = (studio.transcript || [])
+                      .map((seg, idx) => ({ seg, idx }))
+                      .filter(({ seg }) => seg.end > selected.start && seg.start < selected.end);
+                    if (!segs.length) {
+                      return (
+                        <p className="text-xs leading-relaxed text-zinc-300">
+                          {selected.reason || "—"}
+                        </p>
+                      );
+                    }
+                    const dirty = segs.filter(({ seg, idx }) => {
+                      const d = transcriptDrafts[idx];
+                      return d !== undefined && d.trim() !== seg.text;
+                    });
+                    return (
+                      <>
+                        {segs.map(({ seg, idx }) => (
+                          <input
+                            key={idx}
+                            value={transcriptDrafts[idx] ?? seg.text}
+                            onChange={(e) =>
+                              setTranscriptDrafts((d) => ({ ...d, [idx]: e.target.value }))
+                            }
+                            className="input w-full"
+                            aria-label={`Transkrip ${formatClock(seg.start)}`}
+                          />
+                        ))}
+                        {dirty.length > 0 && (
+                          <button
+                            type="button"
+                            className="btn btn-primary mt-1 w-full"
+                            disabled={transcriptSaving}
+                            onClick={async () => {
+                              setTranscriptSaving(true);
+                              try {
+                                await onPatchTranscript(
+                                  dirty.map(({ idx }) => ({
+                                    index: idx,
+                                    text: transcriptDrafts[idx],
+                                  })),
+                                );
+                                setTranscriptDrafts((d) => {
+                                  const next = { ...d };
+                                  for (const { idx } of dirty) delete next[idx];
+                                  return next;
+                                });
+                              } finally {
+                                setTranscriptSaving(false);
+                              }
+                            }}
+                          >
+                            {transcriptSaving
+                              ? "Menyimpan…"
+                              : `Simpan ${dirty.length} segmen & render ulang`}
+                          </button>
+                        )}
+                        <p className="text-[11px] text-zinc-500">
+                          Edit kata yang salah, lalu simpan — caption di-render ulang.
+                        </p>
+                      </>
+                    );
+                  })()}
                 </div>
                 <p className="mt-1 text-[11px] text-zinc-500">
                   {formatClock(selected.start)} → {formatClock(selected.end)} ·{" "}

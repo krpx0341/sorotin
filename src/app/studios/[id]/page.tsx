@@ -104,6 +104,34 @@ export default function StudioDetailPage() {
     if (r.ok) setStudio(j.data);
   }
 
+  /** Save corrected transcript segments, then re-render so captions pick them up. */
+  async function patchTranscript(segments: { index: number; text: string }[]) {
+    if (!studio) return;
+    setActionBusy("apply");
+    try {
+      setStudio((s) =>
+        s
+          ? {
+              ...s,
+              status: "queued",
+              error: undefined,
+              progress: { pct: 0, message: "Re-render queued…" },
+            }
+          : s,
+      );
+      const r = await fetch("/api/studios", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: studio.id, transcriptPatch: { segments }, rerender: true }),
+      });
+      const j = await r.json();
+      if (r.ok) setStudio(j.data);
+      await refresh();
+    } finally {
+      setActionBusy("");
+    }
+  }
+
   async function renameStudio(displayTitle: string) {
     if (!studio) return;
     // Optimistic so the header doesn't flash back to the old title.
@@ -360,7 +388,7 @@ export default function StudioDetailPage() {
         </section>
       )}
 
-      <ClipWorkspace studio={studio} onPatchClip={patchClip} />
+      <ClipWorkspace studio={studio} onPatchClip={patchClip} onPatchTranscript={patchTranscript} />
     </AppShell>
   );
 }

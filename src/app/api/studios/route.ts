@@ -15,6 +15,7 @@ import {
 import { denyIfUnlicensed } from "@/lib/license-guard";
 import { guardApiRequest } from "@/lib/request-guard";
 import { listStudios, loadStudio, mergeSkills, saveStudio } from "@/lib/store";
+import { applyTranscriptPatch } from "@/lib/transcript";
 import type { Studio } from "@/lib/types";
 
 const createSchema = z.object({
@@ -192,6 +193,20 @@ export async function PATCH(req: NextRequest) {
           description: z.string().optional(),
         })
         .optional(),
+      /** Corrected transcript segment texts (transcript editor). */
+      transcriptPatch: z
+        .object({
+          segments: z
+            .array(
+              z.object({
+                index: z.number().int().min(0),
+                text: z.string().min(1).max(500),
+              }),
+            )
+            .min(1)
+            .max(50),
+        })
+        .optional(),
     })
     .parse(await req.json());
 
@@ -226,6 +241,10 @@ export async function PATCH(req: NextRequest) {
         return patch.title !== undefined ? { ...c, ...patch, titleEdited: true } : { ...c, ...patch };
       }),
     };
+  }
+
+  if (body.transcriptPatch && next.transcript?.length) {
+    next = { ...next, transcript: applyTranscriptPatch(next.transcript, body.transcriptPatch.segments) };
   }
 
   saveStudio(next);
